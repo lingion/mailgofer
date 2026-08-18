@@ -105,10 +105,10 @@ wrangler d1 execute mail_api --remote --file=./schema.sql
 
 ### 4. Configure `wrangler.toml`
 
-The only required environment variable is `API_TOKEN`. All other variables are optional and correspond to one of the add-ons.
+The only required setting is `API_TOKEN`. Set it as an encrypted Worker secret — never a plaintext variable. All other variables are optional and correspond to one of the add-ons.
 
 ```toml
-# Minimal configuration — replace <your-d1-database-id> and <your-api-token>:
+# Minimal configuration — replace <your-d1-database-id>:
 name = "mailgofer"
 main = "src/index.js"
 compatibility_date = "2026-03-22"
@@ -118,8 +118,13 @@ binding = "DB"
 database_name = "mail_api"
 database_id = "<your-d1-database-id>"
 
-[vars]
-API_TOKEN = "<openssl rand -hex 32>"
+```
+
+Generate a token and store it as an encrypted secret (read at runtime via `env.API_TOKEN`):
+
+```bash
+openssl rand -hex 32
+npx wrangler secret put API_TOKEN   # paste the token when prompted
 ```
 
 Custom-domain routing is only needed if you intend to use the Email Routing add-on (see below).
@@ -318,7 +323,7 @@ curl -X POST https://send.<your-domain>/api/send \
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `API_TOKEN` | yes | Bearer token for the API. Generate with `openssl rand -hex 32`. |
+| `API_TOKEN` | yes | Bearer token for the API. Set via `wrangler secret put API_TOKEN` — never commit it to `wrangler.toml`. |
 | `MAIL_DOMAIN` | no | Display domain used in generated mailbox addresses. Not used for routing. |
 | `FORWARD_TO_EMAIL` | no | Destination address for forwarded copies. Add-on B. |
 | `RESEND_API_KEY` | no | Outbound provider key. Add-on C. |

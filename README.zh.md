@@ -105,10 +105,10 @@ wrangler d1 execute mail_api --remote --file=./schema.sql
 
 ### 4. 配置 `wrangler.toml`
 
-唯一必需的环境变量是 `API_TOKEN`。其余变量均为可选，对应下文某一可选扩展。
+唯一必需的设置是 `API_TOKEN`。请以 Worker 加密 secret 方式设置，切勿写成明文变量。其余变量均为可选，对应下文某一可选扩展。
 
 ```toml
-# 最小配置——替换 <your-d1-database-id> 与 <your-api-token>：
+# 最小配置——替换 <your-d1-database-id>：
 name = "mailgofer"
 main = "src/index.js"
 compatibility_date = "2026-03-22"
@@ -118,8 +118,13 @@ binding = "DB"
 database_name = "mail_api"
 database_id = "<your-d1-database-id>"
 
-[vars]
-API_TOKEN = "<openssl rand -hex 32>"
+```
+
+生成一个 token 并存为加密 secret（运行时通过 `env.API_TOKEN` 读取）：
+
+```bash
+openssl rand -hex 32
+npx wrangler secret put API_TOKEN   # 按提示粘贴 token
 ```
 
 自定义域名路由仅在使用 Email Routing 扩展时才需要（见下文）。
@@ -319,7 +324,7 @@ curl -X POST https://send.<你的域名>/api/send \
 
 | 变量 | 是否必需 | 用途 |
 |---|---|---|
-| `API_TOKEN` | 是 | API Bearer token。使用 `openssl rand -hex 32` 生成。 |
+| `API_TOKEN` | 是 | API Bearer token。通过 `wrangler secret put API_TOKEN` 设置——切勿明文写入 `wrangler.toml`。 |
 | `MAIL_DOMAIN` | 否 | 生成 mailbox 地址时使用的展示域名，不参与路由。 |
 | `FORWARD_TO_EMAIL` | 否 | 转发副本的目标地址。扩展 B。 |
 | `RESEND_API_KEY` | 否 | 发件服务商 key。扩展 C。 |
