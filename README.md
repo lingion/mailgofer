@@ -1,17 +1,17 @@
 <p align="center">
-  <a href="https://img.shields.io/github/stars/lingion/maildrop?style=for-the-badge&logo=github&color=FFD700"><img src="https://img.shields.io/github/stars/lingion/maildrop?style=for-the-badge&logo=github&color=FFD700" alt="Stars"></a>
-  <a href="https://github.com/lingion/maildrop/network/members"><img src="https://img.shields.io/github/forks/lingion/maildrop?style=for-the-badge&logo=github&color=8B5CF6" alt="Forks"></a>
-  <a href="https://github.com/lingion/maildrop/issues"><img src="https://img.shields.io/github/issues/lingion/maildrop?style=for-the-badge&logo=github&color=EF4444" alt="Issues"></a>
-  <a href="https://github.com/lingion/maildrop/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lingion/maildrop?style=for-the-badge&logo=github&color=10B981" alt="License"></a>
+  <a href="https://img.shields.io/github/stars/lingion/mailgofer?style=for-the-badge&logo=github&color=FFD700"><img src="https://img.shields.io/github/stars/lingion/mailgofer?style=for-the-badge&logo=github&color=FFD700" alt="Stars"></a>
+  <a href="https://github.com/lingion/mailgofer/network/members"><img src="https://img.shields.io/github/forks/lingion/mailgofer?style=for-the-badge&logo=github&color=8B5CF6" alt="Forks"></a>
+  <a href="https://github.com/lingion/mailgofer/issues"><img src="https://img.shields.io/github/issues/lingion/mailgofer?style=for-the-badge&logo=github&color=EF4444" alt="Issues"></a>
+  <a href="https://github.com/lingion/mailgofer/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lingion/mailgofer?style=for-the-badge&logo=github&color=10B981" alt="License"></a>
   <br>
-  <a href="https://github.com/lingion/maildrop/commits/main"><img src="https://img.shields.io/github/last-commit/lingion/maildrop?style=flat-square" alt="Last commit"></a>
+  <a href="https://github.com/lingion/mailgofer/commits/main"><img src="https://img.shields.io/github/last-commit/lingion/mailgofer?style=flat-square" alt="Last commit"></a>
   <img src="https://img.shields.io/badge/runtime-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="CF Workers">
   <img src="https://img.shields.io/badge/storage-Cloudflare%20D1-FF7043?style=flat-square&logo=cloudflare&logoColor=white" alt="D1">
   <img src="https://img.shields.io/badge/lang-JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black" alt="JS">
   <a href="README.zh.md"><img src="https://img.shields.io/badge/README-中文-CC0000?style=flat-square" alt="中文"></a>
 </p>
 
-<h1 align="center">MailDrop</h1>
+<h1 align="center">MailGofer</h1>
 
 <p align="center">
   A disposable mail backend on Cloudflare Workers + D1.<br>
@@ -20,13 +20,13 @@
 
 ---
 
-## What is MailDrop?
+## What is MailGofer?
 
 Every temp-mail service is built for humans: open a webpage, click generate, copy an address, refresh to check for replies.
 
-MailDrop is not that.
+MailGofer is not that.
 
-MailDrop is an HTTP API you deploy to your own Cloudflare account. Give your AI agent the ability to receive emails. Let your CI pipeline drop reports into a queryable address. Spin up a test mailbox with a TTL in one call during an automated signup flow.
+MailGofer is an HTTP API you deploy to your own Cloudflare account. Give your AI agent the ability to receive emails. Let your CI pipeline drop reports into a queryable address. Spin up a test mailbox with a TTL in one call during an automated signup flow.
 
 - 🔌 **One webhook**: `POST /api/inbound` deposits a message. `GET /api/emails?email=...` reads it back. That's the contract.
 - 🌐 **No DNS. No MX records. No SMTP**: The address `xxx@mail.<your-domain>` is just a string in D1. The domain part doesn't need to exist.
@@ -90,8 +90,8 @@ The worker has zero Node dependencies and no build step. `wrangler deploy` is al
 ### 2. Clone and install
 
 ```bash
-git clone https://github.com/lingion/maildrop.git
-cd maildrop
+git clone https://github.com/lingion/mailgofer.git
+cd mailgofer
 npm install
 ```
 
@@ -105,11 +105,11 @@ wrangler d1 execute mail_api --remote --file=./schema.sql
 
 ### 4. Configure `wrangler.toml`
 
-The only required environment variable is `API_TOKEN`. All other variables are optional and correspond to one of the add-ons.
+The only required setting is `API_TOKEN`. Set it as an encrypted Worker secret — never a plaintext variable. All other variables are optional and correspond to one of the add-ons.
 
 ```toml
-# Minimal configuration — replace <your-d1-database-id> and <your-api-token>:
-name = "maildrop"
+# Minimal configuration — replace <your-d1-database-id>:
+name = "mailgofer"
 main = "src/index.js"
 compatibility_date = "2026-03-22"
 
@@ -118,8 +118,13 @@ binding = "DB"
 database_name = "mail_api"
 database_id = "<your-d1-database-id>"
 
-[vars]
-API_TOKEN = "<openssl rand -hex 32>"
+```
+
+Generate a token and store it as an encrypted secret (read at runtime via `env.API_TOKEN`):
+
+```bash
+openssl rand -hex 32
+npx wrangler secret put API_TOKEN   # paste the token when prompted
 ```
 
 Custom-domain routing is only needed if you intend to use the Email Routing add-on (see below).
@@ -274,7 +279,7 @@ Allows the worker to receive mail that real SMTP servers deliver to `xxx@mail.<y
    zone_name = "<your-domain>"
    ```
 3. Set `[vars] MAIL_DOMAIN = "mail.<your-domain>"`.
-4. In the Cloudflare dashboard for the zone: **Email → Email Routing → Enable**, then add a catch-all route `*@mail.<your-domain>` → **Send to Worker** → `maildrop`.
+4. In the Cloudflare dashboard for the zone: **Email → Email Routing → Enable**, then add a catch-all route `*@mail.<your-domain>` → **Send to Worker** → `mailgofer`.
 
 Real SMTP messages are dispatched to the worker by Cloudflare and stored in D1 via the same path used by the webhook.
 
@@ -306,7 +311,7 @@ curl -X POST https://send.<your-domain>/api/send \
     "from":    "task_demo01@mail.<your-domain>",
     "to":      "bob@example.org",
     "subject": "Hello",
-    "text":    "Sent via MailDrop"
+    "text":    "Sent via MailGofer"
   }'
 ```
 
@@ -318,7 +323,7 @@ curl -X POST https://send.<your-domain>/api/send \
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `API_TOKEN` | yes | Bearer token for the API. Generate with `openssl rand -hex 32`. |
+| `API_TOKEN` | yes | Bearer token for the API. Set via `wrangler secret put API_TOKEN` — never commit it to `wrangler.toml`. |
 | `MAIL_DOMAIN` | no | Display domain used in generated mailbox addresses. Not used for routing. |
 | `FORWARD_TO_EMAIL` | no | Destination address for forwarded copies. Add-on B. |
 | `RESEND_API_KEY` | no | Outbound provider key. Add-on C. |
@@ -342,7 +347,7 @@ Auth prevents anonymous access, but won't save you if the token leaks. Don't exp
 
 ## Repository Rule
 
-`lingion/maildrop` is the sole upstream for this project. Don't treat mirrors or forks as the primary entry point. Everything merges here.
+`lingion/mailgofer` is the sole upstream for this project. Don't treat mirrors or forks as the primary entry point. Everything merges here.
 
 ---
 
@@ -365,4 +370,4 @@ You may use, modify, and redistribute this work, including for commercial purpos
 
 ## Contributing
 
-PRs are accepted at <https://github.com/lingion/maildrop>. By contributing, you agree that your contribution is licensed under GPL-3.0.
+PRs are accepted at <https://github.com/lingion/mailgofer>. By contributing, you agree that your contribution is licensed under GPL-3.0.

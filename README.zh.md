@@ -1,17 +1,17 @@
 <p align="center">
-  <a href="https://img.shields.io/github/stars/lingion/maildrop?style=for-the-badge&logo=github&color=FFD700"><img src="https://img.shields.io/github/stars/lingion/maildrop?style=for-the-badge&logo=github&color=FFD700" alt="Stars"></a>
-  <a href="https://github.com/lingion/maildrop/network/members"><img src="https://img.shields.io/github/forks/lingion/maildrop?style=for-the-badge&logo=github&color=8B5CF6" alt="Forks"></a>
-  <a href="https://github.com/lingion/maildrop/issues"><img src="https://img.shields.io/github/issues/lingion/maildrop?style=for-the-badge&logo=github&color=EF4444" alt="Issues"></a>
-  <a href="https://github.com/lingion/maildrop/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lingion/maildrop?style=for-the-badge&logo=github&color=10B981" alt="License"></a>
+  <a href="https://img.shields.io/github/stars/lingion/mailgofer?style=for-the-badge&logo=github&color=FFD700"><img src="https://img.shields.io/github/stars/lingion/mailgofer?style=for-the-badge&logo=github&color=FFD700" alt="Stars"></a>
+  <a href="https://github.com/lingion/mailgofer/network/members"><img src="https://img.shields.io/github/forks/lingion/mailgofer?style=for-the-badge&logo=github&color=8B5CF6" alt="Forks"></a>
+  <a href="https://github.com/lingion/mailgofer/issues"><img src="https://img.shields.io/github/issues/lingion/mailgofer?style=for-the-badge&logo=github&color=EF4444" alt="Issues"></a>
+  <a href="https://github.com/lingion/mailgofer/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lingion/mailgofer?style=for-the-badge&logo=github&color=10B981" alt="License"></a>
   <br>
-  <a href="https://github.com/lingion/maildrop/commits/main"><img src="https://img.shields.io/github/last-commit/lingion/maildrop?style=flat-square" alt="Last commit"></a>
+  <a href="https://github.com/lingion/mailgofer/commits/main"><img src="https://img.shields.io/github/last-commit/lingion/mailgofer?style=flat-square" alt="Last commit"></a>
   <img src="https://img.shields.io/badge/runtime-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="CF Workers">
   <img src="https://img.shields.io/badge/storage-Cloudflare%20D1-FF7043?style=flat-square&logo=cloudflare&logoColor=white" alt="D1">
   <img src="https://img.shields.io/badge/lang-JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black" alt="JS">
   <a href="README.md"><img src="https://img.shields.io/badge/README-English-0078D4?style=flat-square" alt="English"></a>
 </p>
 
-<h1 align="center">MailDrop</h1>
+<h1 align="center">MailGofer</h1>
 
 <p align="center">
   套在 Cloudflare Workers + D1 上的邮件 API 后端。<br>
@@ -20,13 +20,13 @@
 
 ---
 
-## MailDrop 是什么？
+## MailGofer 是什么？
 
 市面上叫「临时邮箱」的东西都是人用的：打开一个网页，点生成，复制地址，在浏览器里刷新收件。
 
-MailDrop 不是这个东西。
+MailGofer 不是这个东西。
 
-MailDrop 是一套 HTTP API。你跑在自己的 Cloudflare 账号里，用它给 Claude Code 接个收信函数，给 GitHub Actions 跑完测试之后投一份报告到可查询的地址，或者在注册脚本里随手起一个带 TTL 的邮箱收验证码。
+MailGofer 是一套 HTTP API。你跑在自己的 Cloudflare 账号里，用它给 Claude Code 接个收信函数，给 GitHub Actions 跑完测试之后投一份报告到可查询的地址，或者在注册脚本里随手起一个带 TTL 的邮箱收验证码。
 
 - 🔌 **核心就是一条 webhook**：`POST /api/inbound` 丢一封邮件进去，`GET /api/emails?email=...` 读回来。没了。
 - 🌐 **不要域名、不要 MX 记录、不要 SMTP**：邮箱地址 (`xxx@mail.<你的域名>`) 只是 D1 里的一行字符串。域名那部分不需要真实存在。
@@ -90,8 +90,8 @@ worker 没有 Node 依赖，没有构建步骤。`wrangler deploy` 就是唯一�
 ### 2. 克隆与安装
 
 ```bash
-git clone https://github.com/lingion/maildrop.git
-cd maildrop
+git clone https://github.com/lingion/mailgofer.git
+cd mailgofer
 npm install
 ```
 
@@ -105,11 +105,11 @@ wrangler d1 execute mail_api --remote --file=./schema.sql
 
 ### 4. 配置 `wrangler.toml`
 
-唯一必需的环境变量是 `API_TOKEN`。其余变量均为可选，对应下文某一可选扩展。
+唯一必需的设置是 `API_TOKEN`。请以 Worker 加密 secret 方式设置，切勿写成明文变量。其余变量均为可选，对应下文某一可选扩展。
 
 ```toml
-# 最小配置——替换 <your-d1-database-id> 与 <your-api-token>：
-name = "maildrop"
+# 最小配置——替换 <your-d1-database-id>：
+name = "mailgofer"
 main = "src/index.js"
 compatibility_date = "2026-03-22"
 
@@ -118,8 +118,13 @@ binding = "DB"
 database_name = "mail_api"
 database_id = "<your-d1-database-id>"
 
-[vars]
-API_TOKEN = "<openssl rand -hex 32>"
+```
+
+生成一个 token 并存为加密 secret（运行时通过 `env.API_TOKEN` 读取）：
+
+```bash
+openssl rand -hex 32
+npx wrangler secret put API_TOKEN   # 按提示粘贴 token
 ```
 
 自定义域名路由仅在使用 Email Routing 扩展时才需要（见下文）。
@@ -275,7 +280,7 @@ webhook 路径独立于以下三项。需要时启用即可。
    zone_name = "<你的域名>"
    ```
 3. 设置 `[vars] MAIL_DOMAIN = "mail.<你的域名>"`。
-4. 在 Cloudflare 控制台对应 zone 下：**Email → Email Routing → Enable**，然后添加 catch-all 路由 `*@mail.<你的域名>` → **Send to Worker** → `maildrop`。
+4. 在 Cloudflare 控制台对应 zone 下：**Email → Email Routing → Enable**，然后添加 catch-all 路由 `*@mail.<你的域名>` → **Send to Worker** → `mailgofer`。
 
 真实 SMTP 投递的消息由 Cloudflare 分发给 worker，并经与 webhook 相同的路径写入 D1。
 
@@ -307,7 +312,7 @@ curl -X POST https://send.<你的域名>/api/send \
     "from":    "task_demo01@mail.<你的域名>",
     "to":      "bob@example.org",
     "subject": "你好",
-    "text":    "通过 MailDrop 发送"
+    "text":    "通过 MailGofer 发送"
   }'
 ```
 
@@ -319,7 +324,7 @@ curl -X POST https://send.<你的域名>/api/send \
 
 | 变量 | 是否必需 | 用途 |
 |---|---|---|
-| `API_TOKEN` | 是 | API Bearer token。使用 `openssl rand -hex 32` 生成。 |
+| `API_TOKEN` | 是 | API Bearer token。通过 `wrangler secret put API_TOKEN` 设置——切勿明文写入 `wrangler.toml`。 |
 | `MAIL_DOMAIN` | 否 | 生成 mailbox 地址时使用的展示域名，不参与路由。 |
 | `FORWARD_TO_EMAIL` | 否 | 转发副本的目标地址。扩展 B。 |
 | `RESEND_API_KEY` | 否 | 发件服务商 key。扩展 C。 |
@@ -343,7 +348,7 @@ worker 完全跑在 Cloudflare 免费额度内：
 
 ## 仓库规则
 
-`lingion/maildrop` 是这个项目的唯一上游。不要以镜像或 fork 作为主入口。所有改动都在这里合并。
+`lingion/mailgofer` 是这个项目的唯一上游。不要以镜像或 fork 作为主入口。所有改动都在这里合并。
 
 ---
 
@@ -366,4 +371,4 @@ GNU 通用公共许可证 v3.0。详见 [LICENSE](./LICENSE)。
 
 ## 贡献
 
-PR 往 <https://github.com/lingion/maildrop> 发。提交即表示你同意以 GPL-3.0 授权你的贡献。
+PR 往 <https://github.com/lingion/mailgofer> 发。提交即表示你同意以 GPL-3.0 授权你的贡献。
