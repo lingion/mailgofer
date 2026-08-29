@@ -119,6 +119,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    /** 约束摘要文案(创建成功 toast 回显,让用户立刻核对生效标准) */
+    private fun constraintSummary(req: CreateMailboxRequest): String = buildString {
+        append(if (req.ttlHours != null) "有效期${req.ttlHours}小时" else "永不过期")
+        append(if ((req.maxMessages ?: 0) > 0) " · 收满${req.maxMessages}封清空" else " · 无限收信")
+    }
+
     /** 单个创建(名字留空 → 服务端自动生成 mbx_xxx) */
     fun createSingle() {
         val api = api() ?: return
@@ -134,7 +140,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 repo.add(mb.toStored())
                 name.value = ""
                 createdCount.value += 1
-                toast.value = "邮箱已就绪: ${mb.email ?: mb.address}"
+                toast.value = "邮箱已就绪(${constraintSummary(req)}): ${mb.email ?: mb.address}"
             } catch (e: Exception) {
                 toast.value = "创建失败: ${e.message ?: e.javaClass.simpleName}"
             } finally {
@@ -181,8 +187,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             batchProgress.value = null
             if (ok > 0) {
                 createdCount.value += ok
-                toast.value = if (failed.isEmpty()) "已创建 $ok 个邮箱"
-                else "成功 $ok · 失败 ${failed.size}: ${failed.take(3).joinToString("、")}"
+                val summary = constraintSummary(baseReq)
+                toast.value = if (failed.isEmpty()) "已创建 $ok 个邮箱($summary)"
+                else "成功 $ok($summary) · 失败 ${failed.size}: ${failed.take(3).joinToString("、")}"
             } else {
                 toast.value = "全部失败(共 ${failed.size} 个),检查配置后重试"
             }
@@ -242,20 +249,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * 刷新邮箱:服务端清空旧邮件 + 重新激活 + 重置约束(缺省沿用旧值)。
+     * 刷新邮箱:清空旧邮件 + 重新激活 + 按邮箱【自己的原标准】续期。
      * UI 层调用前必须已向用户确认"旧邮件会全部丢失"。
-     * 用当前创建表单里的约束值(空=不限),让"刷新换个有效期"顺手可做。
+     * 原标准 = 从 created_at→expires_at 反推原 ttl;永不过期邮箱不传 ttl(服务端沿用 null)。
+     * 不读创建表单的值——表单只属于创建,"刷新换个标准"不在刷新语义里。
      */
     fun refreshMailbox(address: String) {
         val api = api() ?: return
         viewModelScope.launch {
             busy.value = true
             try {
-                val (ttlH, max) = MailboxLogic.parseConstraints(ttlHours.value, maxMessages.value)
-                val req = CreateMailboxRequest(
-                    ttlHours = ttlH.takeIf { it > 0 },
-                    maxMessages = max.takeIf { it > 0 },
-                )
+                val local = mailboxes.value.firstOrNull { it.address == address }
+                val ttlMinutes = local?.let { MailboxLogic.originalTtlMinutes(it.createdAt, it.expiresAt) }
+                val req = ttlMinutes?.let {
+                    CreateMailboxRequest(ttlMinutes = it.toInt(), maxMessages = local.maxMessages.takeIf { m -> m > 0 })
+                }
                 val mb = api.refreshMailbox(address, req)
                 repo.updateAll { list ->
                     MailboxLogic.replaceOrAppend(
@@ -264,7 +272,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 if (activeAddress.value == address) fetchActive(markRead = true)
-                toast.value = "邮箱已刷新,旧邮件已清空: ${mb.email ?: mb.address}"
+                val max = mb.maxMessages ?: 0
+                val constraint = buildString {
+                    append(MailboxLogic.formatExpiry(mb.expiresAt))
+                    append(if (max > 0) " · 收满${max}封清空" else " · 无限收信")
+                }
+                toast.value = "邮箱已刷新(按原标准:$constraint)"
             } catch (e: MailGoferApi.ApiException) {
                 if (e.code == 410) markExpired(address)
                 toast.value = if (e.code == 410) "邮箱已过期且刷新失败,请重试" else "刷新失败: ${e.message}"

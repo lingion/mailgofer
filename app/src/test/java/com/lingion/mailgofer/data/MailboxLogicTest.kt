@@ -235,4 +235,39 @@ class MailboxLogicTest {
     fun `到期显示_解析失败`() {
         assertEquals("过期时间未知", MailboxLogic.formatExpiry("bad", 1_700_000_000_000L))
     }
+
+    // ── originalTtlMinutes(按原标准刷新)──
+    @Test
+    fun `原ttl反推_正常1小时邮箱`() {
+        // created 22:00, expires 23:00 → 60 分钟
+        val mins = MailboxLogic.originalTtlMinutes("2023-11-14T22:00:00Z", "2023-11-14T23:00:00Z")
+        assertEquals(60L, mins)
+    }
+
+    @Test
+    fun `原ttl反推_永不过期返回null`() {
+        assertEquals(null, MailboxLogic.originalTtlMinutes("2023-11-14T22:00:00Z", null))
+    }
+
+    @Test
+    fun `原ttl反推_缺created返回null`() {
+        assertEquals(null, MailboxLogic.originalTtlMinutes(null, "2023-11-14T23:00:00Z"))
+    }
+
+    @Test
+    fun `原ttl反推_非法时间返回null`() {
+        assertEquals(null, MailboxLogic.originalTtlMinutes("垃圾", "2023-11-14T23:00:00Z"))
+        assertEquals(null, MailboxLogic.originalTtlMinutes("2023-11-14T22:00:00Z", "垃圾"))
+    }
+
+    @Test
+    fun `原ttl反推_expires早于created返回null`() {
+        assertEquals(null, MailboxLogic.originalTtlMinutes("2023-11-14T23:00:00Z", "2023-11-14T22:00:00Z"))
+    }
+
+    @Test
+    fun `原ttl反推_不足1分钟返回null`() {
+        // 差 30 秒,取整为 0 分钟 → null(不传,沿用服务端)
+        assertEquals(null, MailboxLogic.originalTtlMinutes("2023-11-14T22:00:00Z", "2023-11-14T22:00:30Z"))
+    }
 }

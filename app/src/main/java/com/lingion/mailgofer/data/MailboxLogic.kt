@@ -90,6 +90,22 @@ object MailboxLogic {
         if (it.address == address) it.copy(expiresAt = expiresAt, active = active, maxMessages = maxMessages) else it
     }
 
+    /**
+     * 从 created_at/expires_at 反推原 ttl 分钟数,供"按原标准刷新"续期。
+     * 任一字段缺失/非法/差值<=0 → null(调用人改传 null = 沿用服务端旧值)。
+     */
+    fun originalTtlMinutes(createdAt: String?, expiresAt: String?): Long? {
+        if (createdAt.isNullOrBlank() || expiresAt.isNullOrBlank()) return null
+        return try {
+            val created = java.time.Instant.parse(createdAt).toEpochMilli()
+            val expires = java.time.Instant.parse(expiresAt).toEpochMilli()
+            val minutes = (expires - created) / 60_000
+            minutes.takeIf { it > 0 }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** 创建约束二选一:ttl_hours 与 max_messages 至少一项 > 0;留空/0 = 不限 */
     fun validateConstraints(ttlText: String, maxText: String): Boolean =
         (ttlText.trim().toLongOrNull() ?: 0L) > 0 || (maxText.trim().toLongOrNull() ?: 0L) > 0
