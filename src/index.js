@@ -260,7 +260,7 @@ async function doSend() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-*** '' // Set your API key here
+        'x-api-key': '<YOUR_API_TOKEN_HERE>'
       },
       body: JSON.stringify(payload)
     });

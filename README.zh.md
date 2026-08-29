@@ -52,7 +52,6 @@ MailGofer 是一套 HTTP API。你跑在自己的 Cloudflare 账号里，用它�
 | 组件 | 用途 |
 |---|---|
 | `src/index.js` | 主 worker——`POST /api/inbound` 与邮箱查询 API |
-| `src/send.js` | 可选的发件路由（Resend） |
 | `schema.sql` | D1 数据库结构（mailboxes / messages） |
 | `wrangler.toml` | Worker 配置——部署前必须替换占位符 |
 | `cloudflare_mail_client.py` | 可选 Python 客户端 |
@@ -71,7 +70,7 @@ MailGofer 是一套 HTTP API。你跑在自己的 Cloudflare 账号里，用它�
 | 入站（核心） | HTTP webhook |
 | 入站（可选） | Cloudflare Email Routing |
 | 发件（可选） | Resend HTTP API |
-| 鉴权 | Bearer token / `x-api-key` / `?api_key=*** |
+| 鉴权 | Bearer token / `x-api-key` / `?api_key=<API_TOKEN>` |
 | 客户端（可选） | Python 3（`requests`） |
 
 worker 没有 Node 依赖，没有构建步骤。`wrangler deploy` 就是唯一要敲的命令。
@@ -143,13 +142,13 @@ curl https://<your-worker>.<your-subdomain>.workers.dev/health
 
 # 生成 mailbox（可选——webhook 接受任意地址）
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/generate-email \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{"prefix":"task_demo01","label":"注册测试","ttl_hours":24}'
 
 # 通过 webhook 存入一封邮件
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/inbound \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{
     "from":    "noreply@example.org",
@@ -160,7 +159,7 @@ curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/inbound \
 
 # 读回
 curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails?email=task_demo01@mail.<your-domain>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 ```
 
 ---
@@ -170,13 +169,16 @@ curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails?email=task_d
 所有接口需要鉴权，三选一：
 
 - `Authorization: Bearer <API_TOKEN>`
-- `x-api-key: ***`
+- `x-api-key: <API_TOKEN>`
 - `?api_key=<API_TOKEN>`
+
+两个例外：`GET /health`（纯文本 `OK`，免鉴权）和 `POST /api/inbound`（当前在鉴权之前命中，见下表）。
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
-| GET | `/health` | 健康检查 |
-| POST | `/api/generate-email` | 创建 mailbox 记录 |
+| GET | `/health` | 健康检查。返回纯文本 `OK`（content-type text/plain，非 JSON），免鉴权 |
+| POST | `/api/generate-email` | 创建 mailbox 记录。与 `POST /api/mailboxes` 同一 handler |
+| POST | `/api/send` | 通过 Resend 发件（需 `RESEND_API_KEY`，未配置返回 500；`from` 域必须等于 `ROOT_MAIL_DOMAIN` 或其子域，否则 400 `from_domain_not_allowed`） |
 | GET | `/api/mailboxes` | 列出所有 mailbox |
 | GET | `/api/mailboxes/:id/messages` | 列出 mailbox 下的邮件 |
 | GET | `/api/mailboxes/:id/messages/:msg_id` | 读取单封邮件 |
@@ -185,13 +187,13 @@ curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails?email=task_d
 | DELETE | `/api/email/:id` | 删除单封 |
 | DELETE | `/api/emails/clear?email=...` | 清空某地址下的所有邮件 |
 | GET | `/api/stats` | mailbox 与邮件计数 |
-| POST | `/api/inbound` | Webhook——将邮件存入 D1 |
+| POST | `/api/inbound` | Webhook——将邮件存入 D1。注意：当前实现在鉴权之前命中（无 token 也可写入任意地址并自动建箱），不要对外公开 worker URL |
 
 ### POST /api/inbound
 
 ```bash
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/inbound \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{
     "from":    "alice@example.org",
@@ -219,7 +221,7 @@ curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/inbound \
 
 ```bash
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/generate-email \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{"prefix":"task_demo01","label":"注册测试","ttl_hours":24}'
 ```
@@ -227,8 +229,15 @@ curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/generate-ema
 | 字段 | 规则 |
 |---|---|
 | `prefix` / `name` | 可选。若提供须匹配 `^[a-z0-9_-]{6,40}$`。 |
+| `address` / `email` | 可选。完整地址 `local@domain`，优先级高于 prefix+domain。 |
+| `subdomain` | 可选。生成 `subdomain.<根域>`。 |
+| `domain` / `email_domain` | 可选。必须是根域或其子域；否则 400 `domain_not_allowed`。 |
 | `label` | 可选的自由标签。 |
-| `ttl_hours` | 可选的 mailbox 有效期（小时），默认 24。 |
+| `ttl_hours` | 可选的有效期（小时），大于 0 时优先。 |
+| `ttl_minutes` | 可选的有效期（分钟）；`ttl_hours` 未给时生效，默认 5，最小 1。 |
+| `max_messages` | 可选的收件上限，默认 5；到上限后自动清空并停用。 |
+
+`POST /api/generate-email` 与 `POST /api/mailboxes` 同一 handler，响应一致：`{ success, data: { id, mailbox_id, email, address, domain, subdomain, token, label, created_at, expires_at, active, max_messages }, usage }`。
 
 该接口用于创建带元数据的 mailbox 记录。它不是接收邮件的前置条件——webhook 接受任意地址。
 
@@ -237,29 +246,31 @@ curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/generate-ema
 ```bash
 # 某地址下的邮件
 curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails?email=task_demo01@mail.<your-domain>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 
 # 按 id 取单封
 curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/email/<message_id>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 
 # 所有 mailbox
-curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/mailboxes' -H 'x-api-key: ***'
+curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/mailboxes' -H 'x-api-key: <API_TOKEN>'
 
 # 统计
-curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/stats' -H 'x-api-key: ***'
+curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/stats' -H 'x-api-key: <API_TOKEN>'
 ```
+
+`GET /api/mailboxes` 返回 `{ success, data: { mailboxes: [...] }, usage }`。每项含 `id, address, token, label, created_at, expires_at, active, max_messages, mailbox_id, domain, subdomain`。最多 200 条，按 `created_at DESC`（最新在前）。
 
 ### DELETE 接口
 
 ```bash
 # 删除单封
 curl -X DELETE 'https://<your-worker>.<your-subdomain>.workers.dev/api/email/<message_id>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 
 # 清空某地址下所有邮件
 curl -X DELETE 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails/clear?email=<addr>@mail.<your-domain>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 ```
 
 ---
@@ -306,7 +317,7 @@ RESEND_API_KEY = "***"
 
 ```bash
 curl -X POST https://send.<你的域名>/api/send \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{
     "from":    "task_demo01@mail.<你的域名>",
@@ -340,7 +351,7 @@ worker 完全跑在 Cloudflare 免费额度内：
 | Workers 请求 | 100,000 / 天 |
 | D1 读 | 5,000,000 / 天 |
 | D1 写 | 100,000 / 天 |
-| Email Routing 邮件 | 100 / 天 / 目标地址（仅扩展 A） |
+| Email Routing 邮件 | 按目标地址限速；Cloudflare 现行 limits 页（2026-06 更新）已不再公布固定每日数字（旧文档为 25/min、100/天/目标地址），以控制台实际显示为准（仅扩展 A） |
 
 鉴权只能挡住不持有 token 的请求，挡不住 token 被泄露或分享。不要把 worker URL 公开出去——一旦被人刷满免费配额，这个部署就连你自己也用不了了。
 

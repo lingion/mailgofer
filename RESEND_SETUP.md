@@ -6,7 +6,7 @@
 ## 收件链路
 
 - 外部邮件发到：`xxx@mail.<your-domain>`
-- Cloudflare Email Routing catch-all → `cf-mail-api` Worker
+- Cloudflare Email Routing catch-all → `mailgofer` Worker
 - Worker 收到后：
   1. 写入 D1 数据库 (`mail_api`) 留痕
   2. 自动转发到 `FORWARD_TO_EMAIL`（可填 QQ 邮箱）
@@ -17,7 +17,7 @@
 2. 添加并验证 destination address（你的真实邮箱，例如 QQ）
 3. 添加 catch-all route：
    - Pattern: `*@mail.<your-domain>`
-   - Action: **Send to Worker** → `cf-mail-api`
+   - Action: **Send to Worker** → `mailgofer`
 4. 确认 `wrangler.toml` 中：
    - `MAIL_DOMAIN = "mail.<your-domain>"`
    - `FORWARD_TO_EMAIL = "<your-real-inbox@example.com>"`
@@ -37,7 +37,7 @@ curl https://api.<your-domain>/health
 curl -X POST https://api.<your-domain>/api/mailboxes \
   -H 'Authorization: Bearer <API_TOKEN>' \
   -H 'Content-Type: application/json' \
-  -d '{"name":"test123","label":"self-test","ttl_hours":1}'
+  -d '{"prefix":"test123","label":"self-test","ttl_hours":1}'
 
 curl 'https://api.<your-domain>/api/emails?email=test123@mail.<your-domain>' \
   -H 'Authorization: Bearer <API_TOKEN>'

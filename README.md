@@ -52,7 +52,6 @@ MailGofer is an HTTP API you deploy to your own Cloudflare account. Give your AI
 | Component | Purpose |
 |---|---|
 | `src/index.js` | Main worker — `POST /api/inbound` plus mailbox query API |
-| `src/send.js` | Optional outbound send route via Resend |
 | `schema.sql` | D1 schema (mailboxes, messages) |
 | `wrangler.toml` | Worker config — placeholders must be replaced before deploy |
 | `cloudflare_mail_client.py` | Optional Python client |
@@ -71,7 +70,7 @@ MailGofer is an HTTP API you deploy to your own Cloudflare account. Give your AI
 | Inbound (core) | HTTP webhook |
 | Inbound (optional) | Cloudflare Email Routing |
 | Outbound (optional) | Resend HTTP API |
-| Auth | Bearer token / `x-api-key` / `?api_key=*** |
+| Auth | Bearer token / `x-api-key` / `?api_key=<API_TOKEN>` |
 | Client (optional) | Python 3 (`requests`) |
 
 The worker has zero Node dependencies and no build step. `wrangler deploy` is all you need to run.
@@ -143,13 +142,13 @@ curl https://<your-worker>.<your-subdomain>.workers.dev/health
 
 # Generate a mailbox (optional — the webhook accepts any address)
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/generate-email \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{"prefix":"task_demo01","label":"signup-test","ttl_hours":24}'
 
 # Deposit a message via the webhook
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/inbound \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{
     "from":    "noreply@example.org",
@@ -160,7 +159,7 @@ curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/inbound \
 
 # Read it back
 curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails?email=task_demo01@mail.<your-domain>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 ```
 
 ---
@@ -169,13 +168,16 @@ curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails?email=task_d
 
 All endpoints require authentication via one of:
 - `Authorization: Bearer <API_TOKEN>`
-- `x-api-key: ***`
+- `x-api-key: <API_TOKEN>`
 - `?api_key=<API_TOKEN>`
+
+Two exceptions: `GET /health` (plain-text `OK`, no auth) and `POST /api/inbound` (currently hit before the auth check — see its row below).
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | Health check |
-| POST | `/api/generate-email` | Create a new mailbox record |
+| GET | `/health` | Health check. Returns plain text `OK` (content-type text/plain, not JSON), no auth |
+| POST | `/api/generate-email` | Create a new mailbox record. Same handler as `POST /api/mailboxes` |
+| POST | `/api/send` | Send via Resend (requires `RESEND_API_KEY`, 500 if unset; `from` domain must equal `ROOT_MAIL_DOMAIN` or a subdomain, else 400 `from_domain_not_allowed`) |
 | GET | `/api/mailboxes` | List all mailboxes |
 | GET | `/api/mailboxes/:id/messages` | List messages in a mailbox |
 | GET | `/api/mailboxes/:id/messages/:msg_id` | Fetch a single message |
@@ -184,13 +186,13 @@ All endpoints require authentication via one of:
 | DELETE | `/api/email/:id` | Delete a single message |
 | DELETE | `/api/emails/clear?email=...` | Clear all mail for an address |
 | GET | `/api/stats` | Counts of mailboxes and messages |
-| POST | `/api/inbound` | Webhook — deposit a message into D1 |
+| POST | `/api/inbound` | Webhook — deposit a message into D1. Note: currently matched before the auth check (an unauthenticated request can write to any address and auto-create the mailbox). Do not expose the worker URL publicly |
 
 ### POST /api/inbound
 
 ```bash
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/inbound \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{
     "from":    "alice@example.org",
@@ -218,7 +220,7 @@ If `to` does not match an existing mailbox in D1, the worker creates one. The we
 
 ```bash
 curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/generate-email \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{"prefix":"task_demo01","label":"signup-test","ttl_hours":24}'
 ```
@@ -226,8 +228,15 @@ curl -X POST https://<your-worker>.<your-subdomain>.workers.dev/api/generate-ema
 | Field | Rule |
 |---|---|
 | `prefix` / `name` | Optional. Must match `^[a-z0-9_-]{6,40}$` when provided. |
+| `address` / `email` | Optional. Full address `local@domain`; takes priority over prefix+domain. |
+| `subdomain` | Optional. Generates `subdomain.<root domain>`. |
+| `domain` / `email_domain` | Optional. Must be the root domain or its subdomain; otherwise 400 `domain_not_allowed`. |
 | `label` | Optional free-form tag. |
-| `ttl_hours` | Optional mailbox lifetime in hours. Defaults to 24. |
+| `ttl_hours` | Optional mailbox lifetime in hours. Takes priority when > 0. |
+| `ttl_minutes` | Optional lifetime in minutes; used when `ttl_hours` is not given. Defaults to 5, minimum 1. |
+| `max_messages` | Optional message cap, default 5. When reached the mailbox is auto-cleared and deactivated. |
+
+Both `POST /api/generate-email` and `POST /api/mailboxes` hit the same handler and return the same shape: `{ success, data: { id, mailbox_id, email, address, domain, subdomain, token, label, created_at, expires_at, active, max_messages }, usage }`.
 
 This endpoint creates a tracked mailbox record with metadata. It is not a prerequisite for receiving mail — the webhook accepts any address.
 
@@ -236,29 +245,31 @@ This endpoint creates a tracked mailbox record with metadata. It is not a prereq
 ```bash
 # Messages for an address
 curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails?email=task_demo01@mail.<your-domain>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 
 # Single message by id
 curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/email/<message_id>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 
 # Mailboxes
-curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/mailboxes' -H 'x-api-key: ***'
+curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/mailboxes' -H 'x-api-key: <API_TOKEN>'
 
 # Stats
-curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/stats' -H 'x-api-key: ***'
+curl 'https://<your-worker>.<your-subdomain>.workers.dev/api/stats' -H 'x-api-key: <API_TOKEN>'
 ```
+
+`GET /api/mailboxes` returns `{ success, data: { mailboxes: [...] }, usage }`. Each item carries `id, address, token, label, created_at, expires_at, active, max_messages, mailbox_id, domain, subdomain`. At most 200 entries, newest first (`created_at DESC`).
 
 ### DELETE endpoints
 
 ```bash
 # Delete a single message
 curl -X DELETE 'https://<your-worker>.<your-subdomain>.workers.dev/api/email/<message_id>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 
 # Clear all mail for an address
 curl -X DELETE 'https://<your-worker>.<your-subdomain>.workers.dev/api/emails/clear?email=<addr>@mail.<your-domain>' \
-  -H 'x-api-key: ***'
+  -H 'x-api-key: <API_TOKEN>'
 ```
 
 ---
@@ -305,7 +316,7 @@ RESEND_API_KEY = "***"
 
 ```bash
 curl -X POST https://send.<your-domain>/api/send \
-  -H 'x-api-key: ***' \
+  -H 'x-api-key: <API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{
     "from":    "task_demo01@mail.<your-domain>",
@@ -339,7 +350,7 @@ The worker is designed to run entirely within Cloudflare's free tier:
 | Workers requests | 100,000 / day |
 | D1 reads | 5,000,000 / day |
 | D1 writes | 100,000 / day |
-| Email Routing messages | 100 / day per destination (Add-on A only) |
+| Email Routing messages | Rate-limited per destination address; Cloudflare's current limits page (updated 2026-06) no longer publishes a fixed daily number (older docs: 25/min, 100/day per destination) — trust the dashboard (Add-on A only) |
 
 Auth prevents anonymous access, but won't save you if the token leaks. Don't expose your worker URL publicly — once someone burns through the free quota, your deployment becomes unusable.
 
