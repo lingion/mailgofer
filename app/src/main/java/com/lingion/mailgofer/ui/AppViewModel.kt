@@ -44,6 +44,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var pollJob: Job? = null
 
     init {
+        // 个人定制版首启预填(BuildConfig → DataStore 一次)
+        viewModelScope.launch { settingsStore.applyPresetsIfNeeded() }
         // 配置里的默认域名回填
         viewModelScope.launch {
             config.collect { domain.value = domain.value.ifBlank { it.domain } }
@@ -93,7 +95,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 messages.value = emptyList()
                 toast.value = "邮箱已就绪: ${mailbox.email}"
             } catch (e: Exception) {
-                toast.value = "创建失败: ${e.message}"
+                val msg = e.message ?: e.javaClass.simpleName
+                toast.value = "创建失败: $msg"
             } finally {
                 busy.value = false
             }

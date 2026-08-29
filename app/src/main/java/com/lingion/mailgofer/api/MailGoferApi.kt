@@ -7,6 +7,8 @@ import com.lingion.mailgofer.model.HealthCheck
 import com.lingion.mailgofer.model.Mailbox
 import com.lingion.mailgofer.model.MailboxMessages
 import com.lingion.mailgofer.model.Message
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.net.HttpURLConnection
@@ -33,12 +35,12 @@ class MailGoferApi(
     class ApiException(val code: Int, val serverError: String?) :
         Exception("HTTP $code${serverError?.let { ": $it" } ?: ""}")
 
-    private fun request(
+    private suspend fun request(
         method: String,
         path: String,
         body: String? = null,
         query: Map<String, String> = emptyMap(),
-    ): Pair<Int, String> {
+    ): Pair<Int, String> = withContext(Dispatchers.IO) {
         val qs = query.entries.joinToString("&") { (k, v) ->
             "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}"
         }
@@ -61,13 +63,13 @@ class MailGoferApi(
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader()?.use(BufferedReader::readText) ?: ""
-            return code to text
+            code to text
         } finally {
             conn.disconnect()
         }
     }
 
-    private inline fun <reified T> call(method: String, path: String, body: String? = null, query: Map<String, String> = emptyMap()): T {
+    private inline suspend fun <reified T> call(method: String, path: String, body: String? = null, query: Map<String, String> = emptyMap()): T {
         val (code, text) = request(method, path, body, query)
         val envelope = try {
             json.decodeFromString<ApiEnvelope<T>>(text)
@@ -87,7 +89,7 @@ class MailGoferApi(
             val (code, _) = request("GET", "/health")
             HealthCheck(ok = code == 200, httpCode = code)
         } catch (e: Exception) {
-            HealthCheck(ok = false, httpCode = -1)
+            HealthCheck(ok = false, httpCode = -1, detail = e.message ?: e.javaClass.simpleName)
         }
     }
 

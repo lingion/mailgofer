@@ -23,3 +23,6 @@ captures/
 q*.json
 *.tmp
 *.bak
+
+# Personal preset (token/host prefill) — never commit
+personal.properties

@@ -106,7 +106,11 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                         scope.launch {
                             val h = api.health()
                             testing = false
-                            testResult = if (h.ok) "连接 OK (HTTP ${h.httpCode})" else "连不上 (HTTP ${h.httpCode})"
+                            testResult = when {
+                                h.ok -> "连接 OK (HTTP ${h.httpCode})"
+                                h.detail != null -> "连不上 (HTTP ${h.httpCode}): ${h.detail}"
+                                else -> "连不上 (HTTP ${h.httpCode})"
+                            }
                         }
                     },
                     enabled = !testing

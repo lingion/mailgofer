@@ -18,7 +18,9 @@ data class ApiEnvelope<T>(
 
 @Serializable
 data class Mailbox(
-    val id: String? = null,
+    // 服务端 D1 自增主键,返回的是数字(如 7349);声明为 Any 等价物会破坏序列化,
+    // 用 kotlinx 的 JsonPrimitive 兼容 int/string 两种形态
+    val id: kotlinx.serialization.json.JsonPrimitive? = null,
     @SerialName("mailbox_id") val mailboxId: String? = null,
     val email: String? = null,
     val address: String? = null,
@@ -81,4 +83,5 @@ data class CreateMailboxRequest(
 data class HealthCheck(
     val ok: Boolean,
     val httpCode: Int,
+    val detail: String? = null,
 )
