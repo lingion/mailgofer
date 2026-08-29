@@ -755,8 +755,10 @@ async function forwardAndStore(message, env) {
   let text = '';
   let html = '';
   try {
-    const raw = message.getRaw ? await message.getRaw() : null;
-    if (raw) {
+    // Workers ForwardableEmailMessage: raw 是 ReadableStream 属性(没有 getRaw() 方法)
+    const rawStream = message.raw;
+    if (rawStream) {
+      const raw = new Uint8Array(await new Response(rawStream).arrayBuffer());
       const bodies = await extractMimeBodies(raw);
       text = bodies.text;
       html = bodies.html;
