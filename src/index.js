@@ -541,13 +541,20 @@ async function createMailbox(req, env) {
   }
 
   const { mailboxName, address, domain, subdomain } = built;
-  const ttlMinutes = Number(body.ttl_minutes || 5);
+  // 约束语义: ttl(小时优先)与 max_messages 二选一,都缺省 → 400 constraint_required。
+  // ttl<=0/缺省 → expires_at=null(永不过期);max_messages<=0/缺省 → 0(无限收信,收满不清空)。
+  const ttlMinutes = Number(body.ttl_minutes || 0);
   const ttlHours = Number(body.ttl_hours || 0);
+  const hasTtl = ttlHours > 0 || ttlMinutes > 0;
+  const hasMax = Number(body.max_messages || 0) > 0;
+  if (!hasTtl && !hasMax) {
+    return apiResponse(env, { rule: 'ttl_hours / ttl_minutes / max_messages 至少一项 > 0' }, false, 'constraint_required', 400);
+  }
   const effectiveTtlMs = ttlHours > 0
     ? ttlHours * 3600 * 1000
     : Math.max(1, ttlMinutes) * 60 * 1000;
-  const expiresAt = new Date(Date.now() + effectiveTtlMs).toISOString();
-  const maxMessages = Number(body.max_messages || 5);
+  const expiresAt = hasTtl ? new Date(Date.now() + effectiveTtlMs).toISOString() : null;
+  const maxMessages = hasMax ? Number(body.max_messages) : 0;
 
   const existing = await getMailboxByAddress(address, env);
   if (existing) {
@@ -611,10 +618,53 @@ async function listMessagesByMailboxIdentifier(identifier, env) {
   ).bind(mailbox.id).all();
 
   return apiResponse(env, {
-    mailbox: { id: mailbox.id, mailbox_id: mailboxIdFromAddress(mailbox.address), address: mailbox.address },
+    mailbox: {
+      id: mailbox.id,
+      mailbox_id: mailboxIdFromAddress(mailbox.address),
+      address: mailbox.address,
+      expires_at: mailbox.expires_at,
+      active: mailbox.active,
+      max_messages: mailbox.max_messages
+    },
     messages: results.map(normalizeMessage),
     count: results.length
   });
+}
+
+/**
+ * POST /api/mailboxes/{id|address}/refresh — 刷新邮箱:
+ * 删掉全部旧邮件 + active=1 + 按传入约束(缺省沿用旧值)重置 expires_at。
+ * 客户端须先告知用户"旧邮件会全部丢失"。
+ */
+async function refreshMailbox(req, identifier, env) {
+  const mailbox = await env.DB.prepare(
+    'SELECT id, address, token, label, created_at, expires_at, active, max_messages FROM mailboxes WHERE id = ? OR address = ? LIMIT 1'
+  ).bind(identifier, identifier.includes('@') ? identifier : `${identifier}@${env.MAIL_DOMAIN}`).first();
+
+  if (!mailbox) return apiResponse(env, null, false, 'mailbox_not_found', 404);
+
+  const body = await req.json().catch(() => ({}));
+  const ttlHours = Number(body.ttl_hours || 0);
+  const ttlMinutes = Number(body.ttl_minutes || 0);
+  const maxMessages = Number(body.max_messages || 0) > 0 ? Number(body.max_messages) : 0;
+  let expiresAt = mailbox.expires_at;
+  if (ttlHours > 0 || ttlMinutes > 0) {
+    const ttlMs = ttlHours > 0 ? ttlHours * 3600 * 1000 : Math.max(1, ttlMinutes) * 60 * 1000;
+    expiresAt = new Date(Date.now() + ttlMs).toISOString();
+  }
+  // 旧值全空(历史脏数据)兜底:刷新时强制给个永不过期,保证约束至少一条
+  if (!expiresAt && maxMessages <= 0) expiresAt = null; // 永不过期 + 无限收信也合法(二选一由 expires_at 承担)
+
+  await purgeMailboxMessages(mailbox.id, env);
+  await env.DB.prepare(
+    'UPDATE mailboxes SET active = 1, expires_at = ?, max_messages = ? WHERE id = ?'
+  ).bind(expiresAt, maxMessages, mailbox.id).run();
+
+  const updated = await env.DB.prepare(
+    'SELECT id, address, token, label, created_at, expires_at, active, max_messages FROM mailboxes WHERE id = ? LIMIT 1'
+  ).bind(mailbox.id).first();
+
+  return apiResponse(env, { ...decorateMailbox(updated), purged_messages: true });
 }
 
 async function getMessageByMailbox(identifier, messageId, env) {
@@ -717,10 +767,11 @@ async function handleInboundPayload(payload, rawJson, env) {
 
   const countRow = await env.DB.prepare('SELECT COUNT(*) as count FROM messages WHERE mailbox_id = ?').bind(mailbox.id).first();
   const messageCount = Number(countRow?.count || 0);
-  const maxMessages = Number(mailbox.max_messages || 5);
+  // max_messages<=0 = 无限收信,永不自动清空
+  const maxMessages = Number(mailbox.max_messages || 0);
 
   let autoCleared = false;
-  if (messageCount >= maxMessages) {
+  if (maxMessages > 0 && messageCount >= maxMessages) {
     await purgeMailboxMessages(mailbox.id, env);
     await deactivateMailbox(mailbox.id, env);
     autoCleared = true;
@@ -809,6 +860,9 @@ export default {
 
       const mailboxMsgsMatch = path.match(/^\/api\/mailboxes\/([^/]+)\/messages$/);
       if (req.method === 'GET' && mailboxMsgsMatch) return await listMessagesByMailboxIdentifier(mailboxMsgsMatch[1], env);
+
+      const mailboxRefreshMatch = path.match(/^\/api\/mailboxes\/([^/]+)\/refresh$/);
+      if (req.method === 'POST' && mailboxRefreshMatch) return await refreshMailbox(req, mailboxRefreshMatch[1], env);
 
       const mailboxMsgMatch = path.match(/^\/api\/mailboxes\/([^/]+)\/messages\/([^/]+)$/);
       if (req.method === 'GET' && mailboxMsgMatch) return await getMessageByMailbox(mailboxMsgMatch[1], mailboxMsgMatch[2], env);
