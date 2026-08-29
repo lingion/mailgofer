@@ -1,3 +1,76 @@
+// ── Minimal MIME body extraction (no deps) ────────────────────────────────
+// Workers email handler 给的是解析好的 message.getRaw() 字节流;
+// 这里用 postal-mime 类的最小实现: 只抽取 text/plain 与 text/html 部分。
+async function extractMimeBodies(rawEmail) {
+  const out = { text: '', html: '' };
+  try {
+    // 优先用 postal-mime(若安装);否则走内置简易解析
+    let PostalMime = null;
+    try { PostalMime = (await import('postal-mime')).default; } catch (_) { /* not installed */ }
+    if (PostalMime) {
+      const parsed = await PostalMime.parse(rawEmail);
+      out.text = parsed.text || '';
+      out.html = parsed.html || '';
+      return out;
+    }
+    const buf = typeof rawEmail === 'string' ? rawEmail : new TextDecoder().decode(rawEmail);
+    // 分离 header / body
+    const sep = buf.indexOf('\r\n\r\n') >= 0 ? '\r\n\r\n' : '\n\n';
+    const sepIdx = buf.indexOf(sep);
+    if (sepIdx < 0) return out;
+    const headers = buf.slice(0, sepIdx);
+    let body = buf.slice(sepIdx + sep.length);
+    const ct = (headers.match(/content-type:\s*([^\r\n;]+)/i) || [])[1] || 'text/plain';
+    const isMultipart = /multipart\//i.test(ct);
+    const boundaryMatch = headers.match(/boundary="?([^"\r\n;]+)"?/i);
+    const decodeTransfer = (text, enc) => {
+      const e = (enc || '').toLowerCase().trim();
+      try {
+        if (e === 'base64') { const bin = atob(text.replace(/\s+/g, '')); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); return new TextDecoder('utf-8').decode(bytes); }
+        if (e === 'quoted-printable') {
+          // =XX 十六进制序列解码为字节,再按 charset 统一解码,避免 latin-1 乱码
+          const bytes = [];
+          const clean = text.replace(/=\r?\n/g, '');
+          for (let i = 0; i < clean.length; i++) {
+            const ch = clean[i];
+            if (ch === '=' && /^[0-9A-F]{2}$/i.test(clean.slice(i + 1, i + 3))) {
+              bytes.push(parseInt(clean.slice(i + 1, i + 3), 16));
+              i += 2;
+            } else {
+              bytes.push(ch.charCodeAt(0) & 0xff);
+            }
+          }
+          return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
+        }
+      } catch (_) { /* fallthrough */ }
+      return text;
+    };
+    const charsetOf = (hdr) => (hdr.match(/charset="?([^"\r\n;]+)"?/i) || [])[1] || 'utf-8';
+    if (isMultipart && boundaryMatch) {
+      const boundary = '--' + boundaryMatch[1];
+      const parts = body.split(boundary);
+      for (const part of parts) {
+        if (part.includes('--')) continue; // closing marker
+        const psep = part.includes('\r\n\r\n') ? '\r\n\r\n' : '\n\n';
+        const pIdx = part.indexOf(psep);
+        if (pIdx < 0) continue;
+        const pHdrs = part.slice(0, pIdx);
+        let pBody = part.slice(pIdx + psep.length);
+        const pCT = ((pHdrs.match(/content-type:\s*([^\r\n;]+)/i) || [])[1] || '').toLowerCase();
+        const pCte = (pHdrs.match(/content-transfer-encoding:\s*([^\r\n;]+)/i) || [])[1] || '';
+        pBody = decodeTransfer(pBody.replace(/\r?\n$/, ''), pCte);
+        if (pCT.includes('text/plain') && !out.text) out.text = pBody;
+        else if (pCT.includes('text/html') && !out.html) out.html = pBody;
+      }
+    } else {
+      const cte = (headers.match(/content-transfer-encoding:\s*([^\r\n;]+)/i) || [])[1] || '';
+      body = decodeTransfer(body.replace(/\r?\n$/, ''), cte);
+      if (/html/i.test(ct)) out.html = body; else out.text = body;
+    }
+  } catch (_) { /* 保底: 空 body 不至于让整封信丢 */ }
+  return out;
+}
+
 // ── Send email via Resend API ──────────────────────────────────────────────
 async function sendViaResend({ from, to, subject, text, html, replyTo }, apiKey) {
   const body = { from, to: [to], subject };
@@ -678,13 +751,26 @@ async function inbound(req, env) {
 
 async function forwardAndStore(message, env) {
   const forwardTo = String(env.FORWARD_TO_EMAIL || '').trim();
+  // 真正解析 MIME 正文(此前硬编码空串,导致所有邮件 body 永远为空)
+  let text = '';
+  let html = '';
+  try {
+    const raw = message.getRaw ? await message.getRaw() : null;
+    if (raw) {
+      const bodies = await extractMimeBodies(raw);
+      text = bodies.text;
+      html = bodies.html;
+    }
+  } catch (e) {
+    console.log('email.mime_parse_failed', String(e?.message || e));
+  }
   const payload = {
     id: message.headers.get('message-id') || crypto.randomUUID(),
     from: message.from,
     to: message.to,
     subject: message.headers.get('subject') || '',
-    text: '',
-    html: ''
+    text,
+    html
   };
 
   const result = await handleInboundPayload(payload, JSON.stringify(payload), env);
