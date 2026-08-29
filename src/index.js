@@ -560,19 +560,32 @@ async function createMailbox(req, env) {
   if (existing) {
     const expiredPurged = await purgeIfExpired(existing, env);
     if (!expiredPurged && Number(existing.active) === 1) {
+      // 本次请求约束绝对权威: 同名活跃邮箱按本次请求重写 ttl/max,历史注册的约束不算数。
+      // ttl>0 → expires_at=now+ttl 且 created_at 同步重置为 now(安卓 originalTtlMinutes 反推续期不错位);
+      // ttl 缺失/<=0 → expires_at=null(永不过期);max_messages>0 → 用请求值,否则 0(无限收信)。
+      // 只重写约束,不删除该邮箱旧 messages(数据保留硬边界)。
+      const nowIso = new Date().toISOString();
+      await env.DB.prepare(
+        'UPDATE mailboxes SET expires_at = ?, max_messages = ?, created_at = ?, active = 1 WHERE id = ?'
+      ).bind(expiresAt, maxMessages, nowIso, existing.id).run();
+
+      const updated = await env.DB.prepare(
+        'SELECT id, address, token, label, created_at, expires_at, active, max_messages FROM mailboxes WHERE id = ? LIMIT 1'
+      ).bind(existing.id).first();
+
       return apiResponse(env, {
-        id: existing.id,
+        id: updated.id,
         mailbox_id: mailboxName,
-        email: existing.address,
-        address: existing.address,
+        email: updated.address,
+        address: updated.address,
         domain,
         subdomain,
-        token: existing.token,
-        label: existing.label,
-        created_at: existing.created_at,
-        expires_at: existing.expires_at,
-        active: existing.active,
-        max_messages: existing.max_messages ?? 5
+        token: updated.token,
+        label: updated.label,
+        created_at: updated.created_at,
+        expires_at: updated.expires_at,
+        active: updated.active,
+        max_messages: updated.max_messages
       });
     }
 
