@@ -52,6 +52,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 .padding(pad)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
