@@ -17,7 +17,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.lingion.mailgofer.model.Message
 import com.lingion.mailgofer.ui.AppViewModel
-import com.lingion.mailgofer.ui.MainScreen
+import com.lingion.mailgofer.ui.MailboxListScreen
+import com.lingion.mailgofer.ui.MailboxInboxScreen
 import com.lingion.mailgofer.ui.MessageScreen
 import com.lingion.mailgofer.ui.SettingsScreen
 
@@ -39,22 +40,34 @@ class MainActivity : ComponentActivity() {
 fun AppNav() {
     val vm: AppViewModel = viewModel()
     val nav = rememberNavController()
-    // 进程内 holder:详情页参数用状态传递(邮件体太大不走 route)
+    // 进程内 holder:详情页/收件箱参数用状态传递(邮件体太大不走 route)
     var selectedMessage = remember { mutableStateOf<Message?>(null) }
+    var selectedAddress = remember { mutableStateOf<String?>(null) }
 
     NavHost(navController = nav, startDestination = "main") {
         composable("main") {
-            MainScreen(
+            MailboxListScreen(
                 vm = vm,
                 onOpenSettings = { nav.navigate("settings") },
-                onOpenMessage = { msg ->
-                    selectedMessage.value = msg
-                    nav.navigate("message")
+                onOpenInbox = { address ->
+                    selectedAddress.value = address
+                    nav.navigate("inbox")
                 }
             )
         }
         composable("settings") {
             SettingsScreen(vm = vm, onBack = { nav.popBackStack() })
+        }
+        composable("inbox") {
+            MailboxInboxScreen(
+                vm = vm,
+                address = selectedAddress.value ?: "",
+                onBack = { nav.popBackStack() },
+                onOpenMessage = { msg ->
+                    selectedMessage.value = msg
+                    nav.navigate("message")
+                }
+            )
         }
         composable("message") {
             MessageScreen(message = selectedMessage.value ?: Message(), onBack = { nav.popBackStack() })

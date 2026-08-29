@@ -82,6 +82,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return MailGoferApi(c.baseUrl(), c.apiToken)
     }
 
+    fun saveConfig(c: ServerConfig, onDone: () -> Unit) {
+        viewModelScope.launch {
+            settingsStore.save(c)
+            toast.value = "配置已保存"
+            onDone()
+        }
+    }
+
     private fun Mailbox.toStored(): StoredMailbox = StoredMailbox(
         address = email ?: address ?: "",
         mailboxId = mailboxId,

@@ -143,7 +143,7 @@ private fun MailboxCard(mailbox: StoredMailbox, onClick: () -> Unit, onRemove: (
                 )
                 Text(
                     buildString {
-                        append("到期 ${mailbox.expiresAt.take(10).ifBlank { "?" }}")
+                        append("到期 ${mailbox.expiresAt?.take(10)?.ifBlank { "?" } ?: "?"}")
                         if (mailbox.maxMessages > 0) append(" · 收满${mailbox.maxMessages}封清空")
                     },
                     style = MaterialTheme.typography.bodySmall,
