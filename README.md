@@ -28,11 +28,11 @@ MailGofer is not that.
 
 MailGofer is an HTTP API you deploy to your own Cloudflare account. Give your AI agent the ability to receive emails. Let your CI pipeline drop reports into a queryable address. Spin up a test mailbox with a TTL in one call during an automated signup flow.
 
-- 🔌 **One webhook**: `POST /api/inbound` deposits a message. `GET /api/emails?email=...` reads it back. That's the contract.
-- 🌐 **No DNS. No MX records. No SMTP**: The address `xxx@mail.<your-domain>` is just a string in D1. The domain part doesn't need to exist.
-- ⚡ **Free tier covers everything**: 100K requests/day, 5M D1 reads/day. You'll never come close as an individual user.
-- 📦 **One command**: `wrangler deploy`. No build step. Zero npm dependencies.
-- 🤖 **API-first**: Bearer token auth, JSON in/out. Wire it into Claude Code or any CI script in five minutes.
+- **One webhook**: `POST /api/inbound` deposits a message. `GET /api/emails?email=...` reads it back. That's the contract.
+- **No DNS. No MX records. No SMTP**: The address `xxx@mail.<your-domain>` is just a string in D1. The domain part doesn't need to exist.
+- **Free tier covers everything**: 100K requests/day, 5M D1 reads/day. You'll never come close as an individual user.
+- **One command**: `wrangler deploy`. No build step. Zero npm dependencies.
+- **API-first**: Bearer token auth, JSON in/out. Wire it into Claude Code or any CI script in five minutes.
 
 ---
 
@@ -40,10 +40,10 @@ MailGofer is an HTTP API you deploy to your own Cloudflare account. Give your AI
 
 | You want to... | Use this |
 |----------------|----------|
-| Open a webpage, grab a code, close the tab | ❌ Any temp-mail website |
-| Have your CI script POST a message and poll it back via API | ✅ |
-| Add an email receiver to your AI agent's tool function | ✅ |
-| Own a programmable mail endpoint with zero recurring cost | ✅ |
+| Open a webpage, grab a code, close the tab | Any temp-mail website |
+| Have your CI script POST a message and poll it back via API | |
+| Add an email receiver to your AI agent's tool function | |
+| Own a programmable mail endpoint with zero recurring cost | |
 
 ---
 

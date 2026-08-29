@@ -197,7 +197,7 @@ textarea { resize: vertical; min-height: 120px; font-family: inherit; }
 </head>
 <body>
 <div class="header">
-  <h1>📮 临时邮箱发送</h1>
+  <h1>临时邮箱发送</h1>
   <p>从 ${mailDomain} 发送一次性邮件</p>
 </div>
 <div class="container">
@@ -260,7 +260,7 @@ async function doSend() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-*** '' // 🔑 Set your API key here
+        'x-api-*** '' // Set your API key here
       },
       body: JSON.stringify(payload)
     });

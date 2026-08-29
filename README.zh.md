@@ -28,11 +28,11 @@ MailGofer 不是这个东西。
 
 MailGofer 是一套 HTTP API。你跑在自己的 Cloudflare 账号里，用它给 Claude Code 接个收信函数，给 GitHub Actions 跑完测试之后投一份报告到可查询的地址，或者在注册脚本里随手起一个带 TTL 的邮箱收验证码。
 
-- 🔌 **核心就是一条 webhook**：`POST /api/inbound` 丢一封邮件进去，`GET /api/emails?email=...` 读回来。没了。
-- 🌐 **不要域名、不要 MX 记录、不要 SMTP**：邮箱地址 (`xxx@mail.<你的域名>`) 只是 D1 里的一行字符串。域名那部分不需要真实存在。
-- ⚡ **免费层级完全够用**：每天 10 万次请求、500 万次 D1 读取——个人用途根本撞不到上限。
-- 📦 **一条命令部署**：`wrangler deploy`。没有构建步骤，没有 npm 依赖。
-- 🤖 **API 优先**：Bearer token 鉴权，JSON 进出——5 分钟接入任何 AI Agent 的工具循环。
+- **核心就是一条 webhook**：`POST /api/inbound` 丢一封邮件进去，`GET /api/emails?email=...` 读回来。没了。
+- **不要域名、不要 MX 记录、不要 SMTP**：邮箱地址 (`xxx@mail.<你的域名>`) 只是 D1 里的一行字符串。域名那部分不需要真实存在。
+- **免费层级完全够用**：每天 10 万次请求、500 万次 D1 读取——个人用途根本撞不到上限。
+- **一条命令部署**：`wrangler deploy`。没有构建步骤，没有 npm 依赖。
+- **API 优先**：Bearer token 鉴权，JSON 进出——5 分钟接入任何 AI Agent 的工具循环。
 
 ---
 
@@ -40,10 +40,10 @@ MailGofer 是一套 HTTP API。你跑在自己的 Cloudflare 账号里，用它�
 
 | 你想干什么... | 方案 |
 |-------------|------|
-| 随手打开网页，收个验证码就关 | ❌ 找任意一个临时邮箱网站 |
-| 让 CI 脚本 POST 一条消息进来，用 API 轮询读回去 | ✅ |
-| 给 AI Agent 里的 tool function 接上收信能力 | ✅ |
-| 有一个自己完全控制、不存在月账单的邮件 API 端点 | ✅ |
+| 随手打开网页，收个验证码就关 | 找任意一个临时邮箱网站 |
+| 让 CI 脚本 POST 一条消息进来，用 API 轮询读回去 | |
+| 给 AI Agent 里的 tool function 接上收信能力 | |
+| 有一个自己完全控制、不存在月账单的邮件 API 端点 | |
 
 ---
 
