@@ -61,7 +61,10 @@ fun MailboxListScreen(
     var showCreate by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
-    LaunchedEffect(toast) {
+    // 弹层开着时主屏不消费 toast(弹层内 SnackbarHost 独享,避免两处并发消费竞态:
+    // 主屏 snackbar 被 scrim 盖住看不见,却抢先 consumeToast 让弹层那条被取消=零反馈)
+    LaunchedEffect(toast, showCreate) {
+        if (showCreate) return@LaunchedEffect
         toast?.let {
             snackbar.showSnackbar(it)
             vm.consumeToast()
