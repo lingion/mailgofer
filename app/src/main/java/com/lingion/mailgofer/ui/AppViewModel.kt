@@ -134,8 +134,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             toast.value = "有效期和最大邮件数至少填一项(留空的那个=不限)"
             return
         }
+        busy.value = true
         viewModelScope.launch {
-            busy.value = true
             try {
                 val mb = api.createMailbox(req)
                 repo.add(mb.toStored())
@@ -150,12 +150,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 批量创建 prefix-1 … prefix-N,串行请求,失败不中断 */
+    /** 批量创建 prefix-1 … prefix-N,串行请求,失败不中断。
+     *  数量按表单值诚实拒绝(超出范围给错误,不静默钳制)——前端权威禁钳制的对应面:1~30 是服务端的语义,
+     *  我们如实回报「不在 1~30」而不是偷偷改成 1 或 30。 */
     fun createBatch() {
         val api = api() ?: return
-        val n = batchCount.value.toIntOrNull()?.coerceIn(1, 30)
-        if (n == null) {
-            toast.value = "数量填 1~30"
+        val n = batchCount.value.toIntOrNull()
+        if (n == null || n !in 1..30) {
+            toast.value = "数量填 1~30(表单填的值未通过校验)"
             return
         }
         val names = try {
@@ -169,8 +171,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             toast.value = "有效期和最大邮件数至少填一项(留空的那个=不限)"
             return
         }
+        busy.value = true
         viewModelScope.launch {
-            busy.value = true
             var ok = 0
             val failed = mutableListOf<String>()
             names.forEachIndexed { i, nm ->
@@ -214,8 +216,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun fetchActive(markRead: Boolean) {
         val addr = activeAddress.value ?: return
         val api = api() ?: return
+        busy.value = true
         viewModelScope.launch {
-            busy.value = true
             try {
                 val list = api.mailboxMessages(addr)
                 messages.value = list.messages
@@ -257,8 +259,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun refreshMailbox(address: String) {
         val api = api() ?: return
+        busy.value = true
         viewModelScope.launch {
-            busy.value = true
             try {
                 val local = mailboxes.value.firstOrNull { it.address == address }
                 val ttlMinutes = local?.let { MailboxLogic.originalTtlMinutes(it.createdAt, it.expiresAt) }

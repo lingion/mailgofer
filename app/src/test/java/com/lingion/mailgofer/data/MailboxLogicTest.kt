@@ -38,6 +38,13 @@ class MailboxLogicTest {
     }
 
     @Test
+    fun `批量命名_数量1与30边界通过`() {
+        // 边界值 1 与 30 必须放行(诚实语义:范围外报错,边界内通过,不再静默钳制)
+        assertEquals(listOf("shopxx-1"), MailboxLogic.batchNames("shopxx", 1))
+        assertEquals(30, MailboxLogic.batchNames("shopxx", 30).size)
+    }
+
+    @Test
     fun `批量命名_大写前缀归一化`() {
         assertEquals(listOf("lingtest-1", "lingtest-2"), MailboxLogic.batchNames("LingTest", 2))
     }
