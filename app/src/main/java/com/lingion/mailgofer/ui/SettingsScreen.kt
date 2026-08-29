@@ -25,12 +25,12 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     var domain by remember(config) { mutableStateOf(config.domain) }
 
     var testing by remember { mutableStateOf(false) }
-    var testResult by remember { mutableStateOf<String?>(null) }
+    var testResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) } // (是否成功, 文案)
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(toast) {
         toast?.let {
-            testResult = it
+            testResult = false to it
             vm.consumeToast()
         }
     }
@@ -97,7 +97,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     onClick = {
                         val c = ServerConfig(host, port, token, domain)
                         if (c.host.isBlank()) {
-                            testResult = "先填服务地址"
+                            testResult = false to "先填服务地址"
                             return@OutlinedButton
                         }
                         testing = true
@@ -108,9 +108,9 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                             val h = api.health()
                             testing = false
                             testResult = when {
-                                h.ok -> "连接 OK (HTTP ${h.httpCode})"
-                                h.detail != null -> "连不上 (HTTP ${h.httpCode}): ${h.detail}"
-                                else -> "连不上 (HTTP ${h.httpCode})"
+                                h.ok -> true to "连接 OK (HTTP ${h.httpCode})"
+                                h.detail != null -> false to "连不上 (HTTP ${h.httpCode}): ${h.detail}"
+                                else -> false to "连不上 (HTTP ${h.httpCode})"
                             }
                         }
                     },
@@ -127,8 +127,12 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 ) { Text("保存") }
             }
 
-            testResult?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            testResult?.let { (ok, msg) ->
+                Text(
+                    msg,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
             }
 
             Text(
