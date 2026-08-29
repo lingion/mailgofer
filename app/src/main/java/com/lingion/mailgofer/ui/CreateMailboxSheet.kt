@@ -54,8 +54,9 @@ import androidx.compose.ui.unit.dp
  *    没有 setSoftInputMode 钩子可挂。
  *  - MainActivity 已 `enableEdgeToEdge()` + AndroidManifest
  *    `android:windowSoftInputMode="adjustResize"`。edge-to-edge 让系统把 ime insets 通过
- *    Compose 的 WindowInsets 树广播到所有子 Composable;adjustResize 让主 Activity 的内容
- *    实际尺寸随键盘弹出/收起而缩放。
+ *    Compose 的 WindowInsets 树广播到所有子 Composable;adjustResize 只在非 edge-to-edge
+ *    的旧路径(API<30)下才真正缩放窗口,API 30+ 被框架忽略——本文件的键盘跟随机制
+ *    完全走 ime insets,不依赖 adjustResize 生效。
  *  - 因此 `WindowInsets.ime` 是实时更新的 Compose insets;Surface 外面套
  *    `Modifier.imePadding()` 会自动响应:键盘弹出时 imePadding 把整个 Surface 顶到键盘正上方,
  *    键盘收起时 imePadding=0,Surface 回到 BottomCenter;`navigationBarsPadding()` 保证
@@ -105,7 +106,8 @@ fun CreateMailboxSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     val baseline = remember { created }
     LaunchedEffect(created) { if (created > baseline) onDismiss() }
 
-    // 返回键关弹层:随本组合注册,收起即注销;键盘开着时 back 先归系统收键盘
+    // 返回键关弹层:随本组合注册,收起即注销;键盘开着时 back 先由系统/输入法层处理,
+    // 弹层是否随之收起以实际分发展现为准,不预设次序
     BackHandler { onDismiss() }
 
     // 约束二选一:至少填一项;留空的那个 = 不限(永不过期 / 无限收信)——按钮区也要读,放函数级作用域
@@ -236,7 +238,8 @@ fun CreateMailboxSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             }
         }
         // 弹层内自渲染 toast:主屏 Scaffold 的 snackbarHost 在全屏 scrim 之下,会被遮罩盖死,
-        // 用户在弹层内点了「创建」(配置不全)零反馈;这里独立消费 toas,保证用户任何时候都看得到
+        // 用户在弹层内点了「创建」(配置不全)零反馈;弹层开着时主屏不消费(MailboxListScreen 有
+        // showCreate 守卫),由这里独享 toast,保证用户任何时候都看得到
         SnackbarHost(sheetSnackbar, modifier = Modifier.imePadding())
     }
 }
