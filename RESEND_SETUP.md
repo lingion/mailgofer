@@ -53,4 +53,4 @@ curl -X POST https://api.<your-domain>/api/inbound \
   }'
 ```
 
-> 不要把这些示例里的 `<your-domain>` 替换成任何非你自己持有的域名。免费额度会被立即耗光。
+> ⚠ 不要把这些示例里的 `<your-domain>` 替换成任何非你自己持有的域名。免费额度会被立即耗光。

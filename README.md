@@ -40,10 +40,10 @@ MailGofer is an HTTP API you deploy to your own Cloudflare account. Give your AI
 
 | You want to... | Use this |
 |----------------|----------|
-| Open a webpage, grab a code, close the tab | Any temp-mail website |
-| Have your CI script POST a message and poll it back via API | |
-| Add an email receiver to your AI agent's tool function | |
-| Own a programmable mail endpoint with zero recurring cost | |
+| Open a webpage, grab a code, close the tab | Any temp-mail website (✗ — none of them have an API) |
+| Have your CI script POST a message and poll it back via API | MailGofer — ✓ |
+| Add an email receiver to your AI agent's tool function | MailGofer — ✓ |
+| Own a programmable mail endpoint with zero recurring cost | MailGofer — ✓ |
 
 ---
 

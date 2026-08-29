@@ -40,10 +40,10 @@ MailGofer 是一套 HTTP API。你跑在自己的 Cloudflare 账号里，用它�
 
 | 你想干什么... | 方案 |
 |-------------|------|
-| 随手打开网页，收个验证码就关 | 找任意一个临时邮箱网站 |
-| 让 CI 脚本 POST 一条消息进来，用 API 轮询读回去 | |
-| 给 AI Agent 里的 tool function 接上收信能力 | |
-| 有一个自己完全控制、不存在月账单的邮件 API 端点 | |
+| 随手打开网页，收个验证码就关 | 找任意一个临时邮箱网站（✗ — 它们都没有 API） |
+| 让 CI 脚本 POST 一条消息进来，用 API 轮询读回去 | MailGofer — ✓ |
+| 给 AI Agent 里的 tool function 接上收信能力 | MailGofer — ✓ |
+| 有一个自己完全控制、不存在月账单的邮件 API 端点 | MailGofer — ✓ |
 
 ---
 
