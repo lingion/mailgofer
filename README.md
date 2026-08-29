@@ -39,7 +39,7 @@ App 不带任何服务端,也不内置账号体系——你连的是你自己的
 **收件箱**
 - 邮件列表(发件人、主题、正文预览、时间),10 秒自动轮询可关
 - 邮件详情:纯文本 + HTML 降级显示
-- 删除单封;复制地址;mailbox token 展示供脚本使用
+- 删除单封(API 已实现 `MailGoferApi.deleteEmail`,UI 入口待接入);复制地址;mailbox token 展示供脚本使用
 
 ## 安装
 
@@ -49,9 +49,12 @@ App 不带任何服务端,也不内置账号体系——你连的是你自己的
 
 ## 从源码构建
 
+客户端代码目前推在 [`lingion/mailgofer`](https://github.com/lingion/mailgofer) 的 `master` 分支(worker 在 `main`):
+
 ```bash
-git clone https://github.com/lingion/mailgofer-android.git
-cd mailgofer-android
+git clone https://github.com/lingion/mailgofer.git
+cd mailgofer
+git checkout master
 ./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -64,9 +67,12 @@ debug 构建会读取根目录的 `personal.properties`(git-ignored),把服务�
 
 ```properties
 presetHost=api.example.com
+presetPort=
 presetDomain=mail.example.com
 presetToken=your-worker-api-token
 ```
+
+`presetPort` 留空即不拼端口(https 默认 443)。
 
 文件不存在时这些值为空串,公开构建不受影响。**不要把真实 Token 提交进仓库。**
 
@@ -91,4 +97,4 @@ minSdk          = 26 / targetSdk = 36
 
 ## License
 
-GPL-3.0
+GPL-3.0。详见仓库根目录 `LICENSE`(复制自 lingion/mailgofer 的 GPL-3.0 全文)。
