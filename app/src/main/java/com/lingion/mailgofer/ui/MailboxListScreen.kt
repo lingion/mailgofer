@@ -11,13 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -28,6 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +46,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lingion.mailgofer.data.MailboxLogic
 import com.lingion.mailgofer.data.StoredMailbox
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,8 +117,10 @@ fun MailboxListScreen(
                 items(mailboxes, key = { it.address }) { mb ->
                     MailboxCard(
                         mailbox = mb,
+                        expired = MailboxLogic.isExpired(mb),
                         onClick = { onOpenInbox(mb.address) },
-                        onRemove = { vm.removeMailbox(mb.address) }
+                        onRemove = { vm.removeMailbox(mb.address) },
+                        onRefresh = { vm.refreshMailbox(mb.address) }
                     )
                 }
                 item { Spacer(Modifier.height(72.dp)) } // 给 FAB 留空间
@@ -126,28 +133,52 @@ fun MailboxListScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MailboxCard(mailbox: StoredMailbox, onClick: () -> Unit, onRemove: () -> Unit) {
+private fun MailboxCard(
+    mailbox: StoredMailbox,
+    expired: Boolean,
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    var confirmRefresh by remember { mutableStateOf(false) }
     ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    mailbox.address,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (expired || !mailbox.active) {
+                        // 过期/失效红星警告(用户要求:过期标红星或警告符号)
+                        Text(
+                            "★",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        mailbox.address,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
                     buildString {
-                        append("到期 ${mailbox.expiresAt?.take(10)?.ifBlank { "?" } ?: "?"}")
-                        if (mailbox.maxMessages > 0) append(" · 收满${mailbox.maxMessages}封清空")
+                        append(if (expired || !mailbox.active) "已过期" else "★")
+                        // 约束语义描述:两项都可能不限
+                        if (!expired && mailbox.active) {
+                            append(MailboxLogic.formatExpiry(mailbox.expiresAt))
+                            if (mailbox.maxMessages > 0) append(" · 收满${mailbox.maxMessages}封清空") else append(" · 无限收信")
+                        }
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (expired || !mailbox.active) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -166,9 +197,28 @@ private fun MailboxCard(mailbox: StoredMailbox, onClick: () -> Unit, onRemove: (
                     )
                 }
             }
+            IconButton(onClick = { confirmRefresh = true }) {
+                Icon(Icons.Default.Refresh, "刷新邮箱", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             IconButton(onClick = onRemove) {
                 Icon(Icons.Default.Close, "移除", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+    if (confirmRefresh) {
+        AlertDialog(
+            onDismissRequest = { confirmRefresh = false },
+            title = { Text("刷新此邮箱?") },
+            text = { Text("「${mailbox.address}」的全部旧邮件会被清空并重新开始计数,确定继续?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRefresh = false
+                    onRefresh()
+                }) { Text("刷新(清空旧邮件)") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRefresh = false }) { Text("取消") }
+            }
+        )
     }
 }

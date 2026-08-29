@@ -5,6 +5,7 @@ import com.lingion.mailgofer.model.CreateMailboxRequest
 import com.lingion.mailgofer.model.EmailList
 import com.lingion.mailgofer.model.HealthCheck
 import com.lingion.mailgofer.model.Mailbox
+import com.lingion.mailgofer.model.MailboxList
 import com.lingion.mailgofer.model.MailboxMessages
 import com.lingion.mailgofer.model.Message
 import kotlinx.coroutines.Dispatchers
@@ -104,6 +105,20 @@ class MailGoferApi(
     suspend fun createMailbox(req: CreateMailboxRequest): Mailbox {
         val payload = json.encodeToString(CreateMailboxRequest.serializer(), req)
         return call<Mailbox>("POST", "/api/mailboxes", body = payload)
+    }
+
+    /** GET /api/mailboxes — 全量列表,轮询用它同步每个邮箱的过期/active 状态 */
+    suspend fun listMailboxes(): MailboxList =
+        call<MailboxList>("GET", "/api/mailboxes")
+
+    /**
+     * POST /api/mailboxes/{idOrAddress}/refresh — 刷新邮箱:
+     * 服务端删全部旧邮件 + active=1 + 按传入约束重置 expires_at(缺省沿用旧值)。
+     * 调用方必须先向用户确认"旧邮件会全部丢失"。
+     */
+    suspend fun refreshMailbox(mailboxIdOrAddress: String, req: CreateMailboxRequest? = null): Mailbox {
+        val body = req?.let { json.encodeToString(CreateMailboxRequest.serializer(), it) }
+        return call<Mailbox>("POST", "/api/mailboxes/$mailboxIdOrAddress/refresh", body = body)
     }
 
     /** GET /api/emails?email= — 按完整地址拉邮件列表(最新100封) */

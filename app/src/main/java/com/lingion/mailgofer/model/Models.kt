@@ -61,12 +61,22 @@ data class MailboxMessages(
     val count: Int = 0,
 )
 
+/** GET /api/mailboxes 的 data */
+@Serializable
+data class MailboxList(
+    val mailboxes: List<Mailbox> = emptyList(),
+)
+
 @Serializable
 data class MailboxBrief(
     // 服务端返回 int(同 Mailbox.id),JsonPrimitive 兼容
     val id: kotlinx.serialization.json.JsonPrimitive? = null,
     @SerialName("mailbox_id") val mailboxId: String? = null,
     val address: String? = null,
+    // GET /api/mailboxes/{id}/messages 的 brief 自 2026-08-29 起带上过期状态(App 同步红星依据)
+    @SerialName("expires_at") val expiresAt: String? = null,
+    val active: Int? = null,
+    @SerialName("max_messages") val maxMessages: Int? = null,
 )
 
 @Serializable

@@ -98,11 +98,15 @@ fun CreateMailboxSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            // 约束二选一:至少填一项;留空的那个 = 不限(永不过期 / 无限收信)
+            val constraintsOk = com.lingion.mailgofer.data.MailboxLogic.validateConstraints(ttlHours, maxMessages)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = ttlHours,
                     onValueChange = { vm.ttlHours.value = it.filter(Char::isDigit) },
                     label = { Text("有效期(小时)") },
+                    supportingText = { Text("留空=永不过期") },
+                    isError = !constraintsOk,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
@@ -110,15 +114,23 @@ fun CreateMailboxSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     value = maxMessages,
                     onValueChange = { vm.maxMessages.value = it.filter(Char::isDigit) },
                     label = { Text("最大邮件数") },
-                    supportingText = { Text("收满自动清空") },
+                    supportingText = { Text("留空=无限收信") },
+                    isError = !constraintsOk,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
+                )
+            }
+            if (!constraintsOk) {
+                Text(
+                    "两项至少填一项(0 或留空 = 该项不限)",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
 
             Button(
                 onClick = { if (mode == 0) vm.createSingle() else vm.createBatch() },
-                enabled = !busy,
+                enabled = !busy && constraintsOk,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (busy) {

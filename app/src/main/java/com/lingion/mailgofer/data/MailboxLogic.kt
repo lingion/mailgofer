@@ -65,4 +65,68 @@ object MailboxLogic {
             expiresAt = legacy.expiresAt,
             maxMessages = legacy.maxMessages,
         )
+
+    /**
+     * 邮箱是否已过期:expires_at=null 表示永不过期,永不判过期;
+     * 解析失败也判未过期(宁可不标,不误报)。
+     */
+    fun isExpired(mailbox: StoredMailbox, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val raw = mailbox.expiresAt ?: return false
+        return try {
+            java.time.Instant.parse(raw).toEpochMilli() < nowMs
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** 把服务端 /api/mailboxes 的最新约束/状态合并到本地条目(未读是本地维度,不覆盖) */
+    fun syncFromServer(
+        list: List<StoredMailbox>,
+        address: String,
+        expiresAt: String?,
+        active: Boolean,
+        maxMessages: Int,
+    ): List<StoredMailbox> = list.map {
+        if (it.address == address) it.copy(expiresAt = expiresAt, active = active, maxMessages = maxMessages) else it
+    }
+
+    /** 创建约束二选一:ttl_hours 与 max_messages 至少一项 > 0;留空/0 = 不限 */
+    fun validateConstraints(ttlText: String, maxText: String): Boolean =
+        (ttlText.trim().toLongOrNull() ?: 0L) > 0 || (maxText.trim().toLongOrNull() ?: 0L) > 0
+
+    /** 输入框文本 → 请求参数:非法/空输入归 0(不限) */
+    fun parseConstraints(ttlText: String, maxText: String): Pair<Int, Int> =
+        (ttlText.trim().toIntOrNull() ?: 0) to (maxText.trim().toIntOrNull() ?: 0)
+
+    /**
+     * 到期时间 → 用户可读文案。剩余时间优先,超过一天才带日期:
+     * null → 永不过期 · <1h → 42分钟后过期 · <24h → 2小时18分钟后过期
+     * ≥24h → 3天后过期 · 11月18日 · 已过期 → 已过期 · 解析失败 → 过期时间未知
+     */
+    fun formatExpiry(expiresAt: String?, nowMs: Long = System.currentTimeMillis()): String {
+        if (expiresAt.isNullOrBlank()) return "永不过期"
+        val expiryMs = try {
+            java.time.Instant.parse(expiresAt).toEpochMilli()
+        } catch (_: Exception) {
+            return "过期时间未知"
+        }
+        val remaining = expiryMs - nowMs
+        if (remaining <= 0) return "已过期"
+
+        val minutes = remaining / 60_000
+        if (minutes < 1) return "1分钟后过期"
+        if (minutes < 60) return "${minutes}分钟后过期"
+
+        val hours = remaining / 3_600_000
+        val remMinutes = (remaining % 3_600_000) / 60_000
+        if (hours < 24) {
+            return if (remMinutes > 0) "${hours}小时${remMinutes}分钟后过期" else "${hours}小时后过期"
+        }
+
+        val days = remaining / 86_400_000
+        val date = java.time.Instant.ofEpochMilli(expiryMs)
+            .atZone(java.time.ZoneId.systemDefault())
+            .let { "${it.monthValue}月${it.dayOfMonth}日" }
+        return "${days}天后过期 · $date"
+    }
 }

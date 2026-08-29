@@ -116,4 +116,123 @@ class MailboxLogicTest {
         val out = MailboxLogic.replaceOrAppend(listOf(StoredMailbox("a@x.com")), StoredMailbox("b@x.com"))
         assertEquals(2, out.size)
     }
+
+    // ── isExpired ──
+    @Test
+    fun `永不过期_null的expiresAt_不算过期`() {
+        assertEquals(false, MailboxLogic.isExpired(StoredMailbox(address = "a@x.com", expiresAt = null)))
+    }
+
+    @Test
+    fun `过期时间在未来_不算过期`() {
+        assertEquals(false, MailboxLogic.isExpired(StoredMailbox(address = "a@x.com", expiresAt = "2099-01-01T00:00:00Z")))
+    }
+
+    @Test
+    fun `过期时间在过去_算过期`() {
+        assertEquals(true, MailboxLogic.isExpired(StoredMailbox(address = "a@x.com", expiresAt = "2020-01-01T00:00:00Z")))
+    }
+
+    @Test
+    fun `过期时间解析失败_不算过期_不误报`() {
+        assertEquals(false, MailboxLogic.isExpired(StoredMailbox(address = "a@x.com", expiresAt = "垃圾数据")))
+    }
+
+    // ── syncFromServer ──
+    @Test
+    fun `同步服务端状态_更新约束与active_保留本地未读`() {
+        val list = listOf(StoredMailbox(address = "a@x.com", unread = 3, lastSeenCount = 5, active = true))
+        val out = MailboxLogic.syncFromServer(
+            list, "a@x.com",
+            expiresAt = "2099-01-01T00:00:00Z", active = false, maxMessages = 0
+        )
+        assertEquals(false, out[0].active)
+        assertEquals(0, out[0].maxMessages)
+        assertEquals("2099-01-01T00:00:00Z", out[0].expiresAt)
+        assertEquals(3, out[0].unread) // 未读是本地维度,同步不覆盖
+    }
+
+    @Test
+    fun `同步服务端状态_列表里没有的地址_原样返回`() {
+        val list = listOf(StoredMailbox(address = "a@x.com"))
+        val out = MailboxLogic.syncFromServer(list, "other@x.com", expiresAt = null, active = true, maxMessages = 5)
+        assertEquals(list, out)
+    }
+
+    // ── validateConstraints ──
+    @Test
+    fun `约束校验_ttl和max都空_报错`() {
+        assertEquals(false, MailboxLogic.validateConstraints(ttlText = "", maxText = ""))
+        assertEquals(false, MailboxLogic.validateConstraints(ttlText = "0", maxText = "0"))
+    }
+
+    @Test
+    fun `约束校验_只填ttl_通过`() {
+        assertEquals(true, MailboxLogic.validateConstraints(ttlText = "24", maxText = ""))
+    }
+
+    @Test
+    fun `约束校验_只填max_通过`() {
+        assertEquals(true, MailboxLogic.validateConstraints(ttlText = "", maxText = "5"))
+    }
+
+    @Test
+    fun `约束校验_两个都填_通过`() {
+        assertEquals(true, MailboxLogic.validateConstraints(ttlText = "1", maxText = "10"))
+    }
+
+    @Test
+    fun `约束解析_ttl空max空_返回null与0`() {
+        val (ttlH, maxM) = MailboxLogic.parseConstraints(ttlText = "", maxText = "")
+        assertEquals(0, ttlH)
+        assertEquals(0, maxM)
+    }
+
+    @Test
+    fun `约束解析_正常数字`() {
+        val (ttlH, maxM) = MailboxLogic.parseConstraints(ttlText = "48", maxText = "20")
+        assertEquals(48, ttlH)
+        assertEquals(20, maxM)
+    }
+
+    // ── formatExpiry ──
+    @Test
+    fun `到期显示_null永不过期`() {
+        assertEquals("永不过期", MailboxLogic.formatExpiry(null, 1_700_000_000_000L))
+    }
+
+    @Test
+    fun `到期显示_不足1小时_分钟`() {
+        // now = 2023-11-14T22:13:20Z, expiry 在 42 分钟后
+        assertEquals("42分钟后过期", MailboxLogic.formatExpiry("2023-11-14T22:55:20Z", 1_700_000_000_000L))
+    }
+
+    @Test
+    fun `到期显示_不足1小时_不足1分钟显示刚刚级`() {
+        assertEquals("1分钟后过期", MailboxLogic.formatExpiry("2023-11-14T22:14:19Z", 1_700_000_000_000L))
+    }
+
+    @Test
+    fun `到期显示_1到24小时_小时加分钟`() {
+        // 5h59m → 5小时59分钟后过期
+        assertEquals("5小时59分钟后过期", MailboxLogic.formatExpiry("2023-11-15T04:12:20Z", 1_700_000_000_000L))
+        // 2h18m → 2小时18分钟后过期
+        assertEquals("2小时18分钟后过期", MailboxLogic.formatExpiry("2023-11-15T00:31:20Z", 1_700_000_000_000L))
+    }
+
+    @Test
+    fun `到期显示_超过24小时_天加日期`() {
+        // 2023-11-17T22:13:20Z = 3天后, 日期 11月18日
+        assertEquals("3天后过期 · 11月18日", MailboxLogic.formatExpiry("2023-11-17T22:13:20Z", 1_700_000_000_000L))
+    }
+
+    @Test
+    fun `到期显示_已过期`() {
+        assertEquals("已过期", MailboxLogic.formatExpiry("2020-01-01T00:00:00Z", 1_700_000_000_000L))
+    }
+
+    @Test
+    fun `到期显示_解析失败`() {
+        assertEquals("过期时间未知", MailboxLogic.formatExpiry("bad", 1_700_000_000_000L))
+    }
 }
