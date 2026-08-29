@@ -106,13 +106,20 @@ object MailboxLogic {
         }
     }
 
-    /** 创建约束二选一:ttl_hours 与 max_messages 至少一项 > 0;留空/0 = 不限 */
+    /** 创建约束二选一:ttl_hours 与 max_messages 至少一项 > 0;留空/0 = 不限。解析口径与 requestConstraints 一致(toIntOrNull) */
     fun validateConstraints(ttlText: String, maxText: String): Boolean =
-        (ttlText.trim().toLongOrNull() ?: 0L) > 0 || (maxText.trim().toLongOrNull() ?: 0L) > 0
+        (ttlText.trim().toIntOrNull() ?: 0) > 0 || (maxText.trim().toIntOrNull() ?: 0) > 0
 
     /** 输入框文本 → 请求参数:非法/空输入归 0(不限) */
     fun parseConstraints(ttlText: String, maxText: String): Pair<Int, Int> =
         (ttlText.trim().toIntOrNull() ?: 0) to (maxText.trim().toIntOrNull() ?: 0)
+
+    /**
+     * 前端权威:表单值换算为请求约束,填多少发多少,不静默钳制(上限由服务端裁决)。
+     * null = 该项不限(留空/0/非法输入)。
+     */
+    fun requestConstraints(ttlText: String, maxText: String): Pair<Int?, Int?> =
+        (ttlText.trim().toIntOrNull()?.takeIf { it > 0 }) to (maxText.trim().toIntOrNull()?.takeIf { it > 0 })
 
     /**
      * 到期时间 → 用户可读文案。剩余时间优先,超过一天才带日期:

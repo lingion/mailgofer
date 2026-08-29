@@ -270,4 +270,46 @@ class MailboxLogicTest {
         // 差 30 秒,取整为 0 分钟 → null(不传,沿用服务端)
         assertEquals(null, MailboxLogic.originalTtlMinutes("2023-11-14T22:00:00Z", "2023-11-14T22:00:30Z"))
     }
+
+    // ── requestConstraints(前端权威:表单值直传,不静默钳制)──
+    @Test
+    fun `请求约束_填1000封_原样透传不钳制`() {
+        val (ttl, max) = MailboxLogic.requestConstraints(ttlText = "", maxText = "1000")
+        assertEquals(null, ttl)
+        assertEquals(1000, max)
+    }
+
+    @Test
+    fun `请求约束_ttl超大值_原样透传不钳制`() {
+        val (ttl, max) = MailboxLogic.requestConstraints(ttlText = "99999", maxText = "50")
+        assertEquals(99999, ttl)
+        assertEquals(50, max)
+    }
+
+    @Test
+    fun `请求约束_留空或0为null表示不限`() {
+        assertEquals(null to null, MailboxLogic.requestConstraints(ttlText = "", maxText = ""))
+        assertEquals(null to null, MailboxLogic.requestConstraints(ttlText = "0", maxText = "0"))
+    }
+
+    @Test
+    fun `请求约束_正常值透传`() {
+        assertEquals(24 to 5, MailboxLogic.requestConstraints(ttlText = "24", maxText = "5"))
+    }
+
+    // ── 校验与实发同口径(toIntOrNull):Int.MAX 有效透传,超出 Int 范围=非法,不透传 ──
+    @Test
+    fun `约束边界_Int最大值视为有效且原样透传`() {
+        assertEquals(true, MailboxLogic.validateConstraints(ttlText = "2147483647", maxText = ""))
+        assertEquals(2147483647 to null, MailboxLogic.requestConstraints(ttlText = "2147483647", maxText = ""))
+    }
+
+    @Test
+    fun `约束边界_超出Int范围视为非法不透传`() {
+        // 超出 Int:校验必须拒绝(与实发同口径),不能放行一个等效全留空的请求
+        assertEquals(false, MailboxLogic.validateConstraints(ttlText = "2147483648", maxText = ""))
+        assertEquals(false, MailboxLogic.validateConstraints(ttlText = "", maxText = "2147483648"))
+        assertEquals(null to null, MailboxLogic.requestConstraints(ttlText = "2147483648", maxText = ""))
+        assertEquals(null to null, MailboxLogic.requestConstraints(ttlText = "", maxText = "2147483648"))
+    }
 }

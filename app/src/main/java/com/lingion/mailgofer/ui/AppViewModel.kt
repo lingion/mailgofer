@@ -109,13 +109,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun commonRequest(nameOrNull: String?): CreateMailboxRequest? {
         // 约束二选一:ttl 与 max 至少一项 > 0;留空 = 不限(永不过期/无限收信)
-        val (ttlH, max) = MailboxLogic.parseConstraints(ttlHours.value, maxMessages.value)
         if (!MailboxLogic.validateConstraints(ttlHours.value, maxMessages.value)) return null
+        // 前端权威:表单填多少就发多少,不静默钳制(说1000封就是1000)
+        val (ttlH, max) = MailboxLogic.requestConstraints(ttlHours.value, maxMessages.value)
         return CreateMailboxRequest(
             name = nameOrNull,
             domain = domain.value.trim().lowercase().ifBlank { null },
-            ttlHours = ttlH.coerceAtMost(8760).takeIf { it > 0 },
-            maxMessages = max.coerceIn(0, 100).takeIf { it > 0 },
+            ttlHours = ttlH,
+            maxMessages = max,
         )
     }
 
