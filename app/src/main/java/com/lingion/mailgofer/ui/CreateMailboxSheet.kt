@@ -27,6 +27,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,12 +69,14 @@ import androidx.compose.ui.unit.dp
  * 底部=键盘正上方。
  *
  * 加固点:
- *  - BackHandler:弹层开着时系统返回键关弹层(IME 开着时第一次 back 先收键盘,第二次才到
- *    这里,顺序天然正确);随组合生命周期自动注销,弹层收起即失效。
+ *  - BackHandler:弹层开着时系统返回键关弹层。与系统键盘收起的先后次序由 OnBackPressedDispatcher
+ *    分发顺序决定,不同系统实现可能有差异,不在此处硬编码假设;随组合生命周期自动注销,弹层收起即失效。
  *  - Surface 挂 `semantics { dialog() }`:无障碍树里标记为对话框(TalkBack 可识别上下文)。
  *    用 dialog()(IsDialog)而非 Role.Dialog——compose-ui 1.7.4 的 Role 枚举没有 Dialog 值,
  *    Compose 官方 Dialog 同样走 IsDialog。
- *  - 滚动列挂 imeNestedScroll():表单滚到底继续上滑联动收键盘(API<30 无 ime inset,自动 no-op)。
+ *  - 滚动列挂 imeNestedScroll():表单滚到底继续上滑联动收键盘。no-op 边界在 SDK_INT<30——
+ *    IME 动画联动协议(WindowInsetsAnimation)是 API 30 才有的能力,与 ime inset 数值无关
+ *    (API 26-29 一样有 ime insets,只是没有这套动画协议)。
  */
 @OptIn(ExperimentalLayoutApi::class) // imeNestedScroll 在 foundation 1.7.4 仍停实验期
 @Composable
@@ -86,7 +90,16 @@ fun CreateMailboxSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     val maxMessages by vm.maxMessages.collectAsState()
     val busy by vm.busy.collectAsState()
     val batchProgress by vm.batchProgress.collectAsState()
+    val toast by vm.toast.collectAsState()
     val created by vm.createdCount.collectAsState()
+
+    val sheetSnackbar = remember { SnackbarHostState() }
+    LaunchedEffect(toast) {
+        toast?.let {
+            sheetSnackbar.showSnackbar(it)
+            vm.consumeToast()
+        }
+    }
 
     // 打开时的基线:创建成功(createdCount 增长)→ 自动收起
     val baseline = remember { created }
@@ -127,7 +140,7 @@ fun CreateMailboxSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     Modifier
                         .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState())
-                        .imeNestedScroll() // 表单滚到底继续上滑 → 联动收键盘;低版本 ime inset 恒 0,no-op
+                        .imeNestedScroll() // 滚到底继续上滑联动收键盘;SDK<30 无 IME 动画协议,自动 no-op
                         .padding(horizontal = 16.dp)
                         .padding(top = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -222,5 +235,8 @@ fun CreateMailboxSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 }
             }
         }
+        // 弹层内自渲染 toast:主屏 Scaffold 的 snackbarHost 在全屏 scrim 之下,会被遮罩盖死,
+        // 用户在弹层内点了「创建」(配置不全)零反馈;这里独立消费 toas,保证用户任何时候都看得到
+        SnackbarHost(sheetSnackbar, modifier = Modifier.imePadding())
     }
 }
