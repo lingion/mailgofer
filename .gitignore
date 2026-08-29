@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+local.properties
+
+# Android
+*.apk
+!Sleepy_v1.0_arm64-debug.apk
+*.iml
+.idea/
+captures/
+
+# IDE
+.vscode/
+*.swp
+.DS_Store
+
+# Output
+*.log
+.verify/token
+
+# Temp query/result files (e.g. ad-hoc web search dumps)
+q*.json
+*.tmp
+*.bak
