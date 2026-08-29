@@ -83,11 +83,18 @@ class MailGoferApi(
         return envelope.data as T
     }
 
-    /** GET /health — 唯一免鉴权端点,用于连接测试 */
+    /**
+     * 连接测试:打一个【需要鉴权】的轻端点(GET /api/mailboxes)。
+     * /health 免鉴权,token 错也返回 200,会造成"连接 OK"假阴性。
+     */
     suspend fun health(): HealthCheck {
         return try {
-            val (code, _) = request("GET", "/health")
-            HealthCheck(ok = code == 200, httpCode = code)
+            val (code, _) = request("GET", "/api/mailboxes")
+            if (code == 401) {
+                HealthCheck(ok = false, httpCode = 401, detail = "API Token 无效(鉴权失败)")
+            } else {
+                HealthCheck(ok = code == 200, httpCode = code)
+            }
         } catch (e: Exception) {
             HealthCheck(ok = false, httpCode = -1, detail = e.message ?: e.javaClass.simpleName)
         }

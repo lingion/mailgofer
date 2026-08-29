@@ -180,7 +180,7 @@ fun MainScreen(vm: AppViewModel, onOpenSettings: () -> Unit, onOpenMessage: (Mes
                     }
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(messages, key = { it.id ?: it.hashCode().toString() }) { msg ->
+                        items(messages, key = { it.idString ?: "idx-${it.hashCode()}" }) { msg ->
                             Card(
                                 onClick = { onOpenMessage(msg) },
                                 modifier = Modifier.fillMaxWidth()
