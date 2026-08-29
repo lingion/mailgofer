@@ -646,7 +646,8 @@ async function refreshMailbox(req, identifier, env) {
   const body = await req.json().catch(() => ({}));
   const ttlHours = Number(body.ttl_hours || 0);
   const ttlMinutes = Number(body.ttl_minutes || 0);
-  const maxMessages = Number(body.max_messages || 0) > 0 ? Number(body.max_messages) : 0;
+  // 缺省沿用旧值: max_messages 未传/<=0 → 保留 mailbox 现值,不落 0
+  const maxMessages = Number(body.max_messages || 0) > 0 ? Number(body.max_messages) : Number(mailbox.max_messages || 0);
   let expiresAt = mailbox.expires_at;
   if (ttlHours > 0 || ttlMinutes > 0) {
     const ttlMs = ttlHours > 0 ? ttlHours * 3600 * 1000 : Math.max(1, ttlMinutes) * 60 * 1000;
