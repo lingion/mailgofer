@@ -13,6 +13,6 @@ data class StoredMailbox(
     val expiresAt: String? = null,
     val maxMessages: Int = 0,
     val active: Boolean = true,
-    val lastSeenCount: Int = 0,     // 上次轮询见到的邮件总数(未读增量基准)
-    val unread: Int = 0,
+    val lastSeenCount: Int = 0,     // 已废弃:未读改为 Room 本地真值(cached_messages.unread),保留仅兼容旧 DataStore JSON 反序列化
+    val unread: Int = 0,            // 已废弃:同上,真值在 Room,保留仅兼容旧 JSON
 )

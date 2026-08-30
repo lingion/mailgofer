@@ -157,20 +157,6 @@ class MailboxLogicTest {
         assertEquals(true, MailboxLogic.validateConstraints(ttlText = "1", maxText = "10"))
     }
 
-    @Test
-    fun `约束解析_ttl空max空_返回null与0`() {
-        val (ttlH, maxM) = MailboxLogic.parseConstraints(ttlText = "", maxText = "")
-        assertEquals(0, ttlH)
-        assertEquals(0, maxM)
-    }
-
-    @Test
-    fun `约束解析_正常数字`() {
-        val (ttlH, maxM) = MailboxLogic.parseConstraints(ttlText = "48", maxText = "20")
-        assertEquals(48, ttlH)
-        assertEquals(20, maxM)
-    }
-
     // ── formatExpiry ──
     @Test
     fun `到期显示_null永不过期`() {

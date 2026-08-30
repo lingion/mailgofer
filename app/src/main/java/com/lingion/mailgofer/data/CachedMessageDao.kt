@@ -34,9 +34,6 @@ interface CachedMessageDao {
     @Query("UPDATE cached_messages SET unread = 0 WHERE messageKey = :messageKey")
     suspend fun markRead(messageKey: String)
 
-    @Query("UPDATE cached_messages SET unread = 0 WHERE mailboxAddress = :address AND state = 'INBOX'")
-    suspend fun markAllRead(address: String)
-
     @Query("DELETE FROM cached_messages WHERE messageKey = :messageKey")
     suspend fun deleteLocal(messageKey: String)
 

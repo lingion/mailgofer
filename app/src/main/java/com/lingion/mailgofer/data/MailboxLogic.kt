@@ -81,10 +81,6 @@ object MailboxLogic {
     fun validateConstraints(ttlText: String, maxText: String): Boolean =
         (ttlText.trim().toIntOrNull() ?: 0) > 0 || (maxText.trim().toIntOrNull() ?: 0) > 0
 
-    /** 输入框文本 → 请求参数:非法/空输入归 0(不限) */
-    fun parseConstraints(ttlText: String, maxText: String): Pair<Int, Int> =
-        (ttlText.trim().toIntOrNull() ?: 0) to (maxText.trim().toIntOrNull() ?: 0)
-
     /**
      * 前端权威:表单值换算为请求约束,填多少发多少,不静默钳制(上限由服务端裁决)。
      * null = 该项不限(留空/0/非法输入)。
