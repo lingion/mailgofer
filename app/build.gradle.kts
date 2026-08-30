@@ -22,8 +22,8 @@ android {
         applicationId = "com.lingion.mailgofer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
 
         // 预填配置进 BuildConfig;public 构建时 personal.properties 不存在 → 全为空串
         buildConfigField("String", "PRESET_HOST", "\"${preset("presetHost")}\"")
