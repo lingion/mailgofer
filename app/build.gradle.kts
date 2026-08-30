@@ -75,8 +75,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
 
-    // Room 本地缓存
-    val roomVersion = "2.6.1"
+    // Room 本地缓存(2.7.1: Kotlin 2.1/KSP2 下 Room 2.6.1 编译器崩溃,2.7 起官方支持 KSP2)
+    val roomVersion = "2.7.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
