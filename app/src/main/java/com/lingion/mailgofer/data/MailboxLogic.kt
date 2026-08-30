@@ -157,6 +157,23 @@ object MailboxLogic {
     fun messageKeyFor(mailboxAddress: String, id: String?, externalId: String?): String =
         externalId?.takeIf { it.isNotBlank() } ?: "$mailboxAddress:$id"
 
+    /** 云端 Message(API 已解成的 data class)→ 本地缓存行;键与字段搬运口径同 messageKeyFor */
+    fun toCached(mailboxAddress: String, msg: com.lingion.mailgofer.model.Message): CachedMessage = CachedMessage(
+        messageKey = messageKeyFor(mailboxAddress, msg.id?.content, msg.externalId),
+        mailboxAddress = mailboxAddress,
+        fromAddress = msg.fromAddress,
+        subject = msg.subject,
+        content = msg.content,
+        htmlContent = msg.htmlContent,
+        createdAt = msg.createdAt,
+        timestamp = msg.timestamp,
+        cachedAt = System.currentTimeMillis(),
+    )
+
+    /** 云端删除用的数字 id: 兜底键 "$address:$id" 才能拆出;external_id 键返回 null(需查接口匹配) */
+    fun cloudIdFor(mailboxAddress: String, messageKey: String): String? =
+        messageKey.takeIf { it.startsWith("$mailboxAddress:") }?.substringAfter(':')
+
     /** 一次增量同步计划: 新 key 插入(INBOX+未读),已有 key 只刷正文 */
     fun planSync(cached: Map<String, CachedMessage>, incoming: List<CachedMessage>): SyncPlan {
         val toInsert = incoming.filter { it.messageKey !in cached }

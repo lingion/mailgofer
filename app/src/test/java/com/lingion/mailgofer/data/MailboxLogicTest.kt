@@ -1,5 +1,7 @@
 package com.lingion.mailgofer.data
 
+import com.lingion.mailgofer.model.Message
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -361,5 +363,66 @@ class MailboxLogicTest {
         val plan = MailboxLogic.planSync(mapOf("k1" to existing), incoming)
         assertEquals(listOf("k2"), plan.toInsert.map { it.messageKey })
         assertEquals(listOf("k1"), plan.toRefresh.map { it.messageKey })
+    }
+
+    // ── toCached(Message data class → 缓存行)──
+    @Test
+    fun `消息转换_键生成与字段搬运`() {
+        val msg = Message(
+            id = JsonPrimitive(9),
+            externalId = "ext-9",
+            fromAddress = "noreply@x.com",
+            subject = "验证码",
+            content = "code 123456",
+            htmlContent = "<p>code 123456</p>",
+            createdAt = "2026-08-30T00:00:00Z",
+            timestamp = 1_700_000_000L,
+        )
+        val c = MailboxLogic.toCached("a@x.com", msg)
+        // external_id 优先作键(与 messageKeyFor 口径一致)
+        assertEquals("ext-9", c.messageKey)
+        assertEquals("a@x.com", c.mailboxAddress)
+        assertEquals("noreply@x.com", c.fromAddress)
+        assertEquals("验证码", c.subject)
+        assertEquals("code 123456", c.content)
+        assertEquals("<p>code 123456</p>", c.htmlContent)
+        assertEquals("2026-08-30T00:00:00Z", c.createdAt)
+        assertEquals(1_700_000_000L, c.timestamp)
+        assertTrue(c.cachedAt > 0) // 缓存时间戳已打点
+    }
+
+    @Test
+    fun `消息转换_无externalId_兜底键带地址前缀`() {
+        val msg = Message(id = JsonPrimitive(9), subject = "s")
+        val c = MailboxLogic.toCached("a@x.com", msg)
+        assertEquals("a@x.com:9", c.messageKey) // id 取 JsonPrimitive.content 字符串化
+    }
+
+    @Test
+    fun `消息转换_全空字段_不崩且键为地址null`() {
+        // 服务端 id 恒存在,这里是防御性口径:messageKeyFor 兜底 "$addr:null" 不抛
+        val c = MailboxLogic.toCached("a@x.com", Message())
+        assertEquals("a@x.com:null", c.messageKey)
+        assertEquals(null, c.subject)
+        assertEquals(null, c.content)
+    }
+
+    // ── cloudIdFor(云端删除 id 提取)──
+    @Test
+    fun `删除云端id_兜底键拆出_地址前缀校验`() {
+        assertEquals("9", MailboxLogic.cloudIdFor("a@x.com", "a@x.com:9"))
+        assertEquals(null, MailboxLogic.cloudIdFor("a@x.com", "ext-9")) // external_id 键,无云端 id
+    }
+
+    @Test
+    fun `删除云端id_前缀地址不匹配_不给id`() {
+        // 防 B 邮箱的键被 A 邮箱误拆(id 自增跨邮箱会撞,必须校验前缀归属)
+        assertEquals(null, MailboxLogic.cloudIdFor("b@x.com", "a@x.com:9"))
+    }
+
+    @Test
+    fun `删除云端id_纯数字串不算兜底键_返回null`() {
+        // "9" 不含地址前缀,不能当云端 id 用
+        assertEquals(null, MailboxLogic.cloudIdFor("a@x.com", "9"))
     }
 }
