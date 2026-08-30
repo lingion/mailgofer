@@ -323,7 +323,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 归档: 收件箱消失,归档页可见 */
     fun archiveMessage(key: String) {
-        viewModelScope.launch { dao.setState(key, MessageState.ARCHIVED) }
+        viewModelScope.launch {
+            dao.setState(key, MessageState.ARCHIVED)
+            toast.value = "已归档"
+        }
     }
 
     /** 取消归档: 回收件箱 */

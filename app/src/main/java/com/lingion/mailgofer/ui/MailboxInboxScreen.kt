@@ -1,5 +1,8 @@
 package com.lingion.mailgofer.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,10 +17,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -26,9 +32,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -67,6 +76,9 @@ fun MailboxInboxScreen(
     val clipboard = LocalClipboardManager.current
     val snackbar = remember { SnackbarHostState() }
     var showRefreshConfirm by remember { mutableStateOf(false) }
+    // 长按菜单挂靠的邮件 / 待确认删除的邮件(侧滑到位与长按菜单「删除」共用同一个确认框)
+    var menuFor by remember { mutableStateOf<CachedMessage?>(null) }
+    var pendingDelete by remember { mutableStateOf<CachedMessage?>(null) }
 
     LaunchedEffect(toast) {
         toast?.let {
@@ -166,7 +178,40 @@ fun MailboxInboxScreen(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(messages, key = { it.messageKey }) { msg ->
-                        MessageRow(msg, snackbar) { onOpenMessage(msg) }
+                        // 长按菜单锚定在本行(SwipeToDismissBox 外包一层 Box 作锚点)
+                        Box {
+                            SwipeableMessageRow(
+                                msg = msg,
+                                onArchive = { vm.archiveMessage(msg.messageKey) },
+                                onDelete = { pendingDelete = msg },
+                                onClick = {
+                                    vm.markMessageRead(msg.messageKey)
+                                    onOpenMessage(msg)
+                                },
+                                onLongClick = { menuFor = msg },
+                            ) {
+                                MessageRow(msg, snackbar)
+                            }
+                            DropdownMenu(
+                                expanded = menuFor == msg,
+                                onDismissRequest = { menuFor = null }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("归档") },
+                                    onClick = {
+                                        menuFor?.let { vm.archiveMessage(it.messageKey) }
+                                        menuFor = null
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("删除") },
+                                    onClick = {
+                                        pendingDelete = menuFor
+                                        menuFor = null
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -189,11 +234,35 @@ fun MailboxInboxScreen(
             }
         )
     }
+
+    // 删除二选确认框: 侧滑到位与长按菜单「删除」都汇到这里,确认前不真删
+    pendingDelete?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除这封邮件?") },
+            text = { Text(Rfc2047.decode(msg.subject) ?: "(无主题)") },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        vm.deleteMessageLocal(msg.messageKey)
+                        pendingDelete = null
+                    }) { Text("仅本地删") }
+                    TextButton(onClick = {
+                        vm.deleteMessageEverywhere(msg)
+                        pendingDelete = null
+                    }) { Text("本地+云端都删") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            }
+        )
+    }
 }
 
-/** 收件箱列表行: 与详情页同一渲染管线(主题解码 + 脏 MIME 清洗 + OTP 识别) */
+/** 收件箱列表行: 与详情页同一渲染管线(主题解码 + 脏 MIME 清洗 + OTP 识别); 不可点 — 点击/长按由 SwipeableMessageRow 统一接管 */
 @Composable
-private fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState, onClick: () -> Unit) {
+private fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState) {
     val displaySubject = Rfc2047.decode(msg.subject)
     val bodies = MimeSanitizer.sanitize(msg.content)
     val plain = bodies.text.ifBlank {
@@ -201,10 +270,7 @@ private fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState, onClick:
             ?: bodies.html.replace(Regex("<[^>]+>"), " ")
     }
     val otp = OtpExtractor.extract(plain) ?: OtpExtractor.extract(bodies.html)
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -240,5 +306,77 @@ private fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState, onClick:
                 color = MaterialTheme.colorScheme.outline
             )
         }
+    }
+}
+
+/**
+ * 可侧滑的收件箱行: 右滑(StartToEnd)=归档、左滑(EndToStart)=删除。
+ *
+ * 复位方案(实测选择):
+ * - 归档 confirmValueChange 返回 true → 行滑出 dismissed 位,Room Flow 把 state=ARCHIVED 的行
+ *   从 inboxFlow 移除,列表自动收走该项,无需手动 reset;
+ * - 删除 confirmValueChange 返回 false → 手势被否决,行自动弹回 Settled(确认框期间行保持原位,
+ *   用户点「取消」也无残留),真删交由确认框回调,行同样随 Flow 消失。
+ * 因此两个方向都不需要 snapTo/LaunchedEffect 复位管道。
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun SwipeableMessageRow(
+    msg: CachedMessage,
+    onArchive: () -> Unit,
+    onDelete: () -> Unit,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { v ->
+            when (v) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    onArchive()
+                    true
+                }
+                // 不真删,只弹确认框;返回 false 让行弹回原位
+                SwipeToDismissBoxValue.EndToStart -> {
+                    onDelete()
+                    false
+                }
+                SwipeToDismissBoxValue.Settled -> false
+            }
+        },
+        positionalThreshold = { totalDistance -> totalDistance * 0.45f },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            val (icon, bg, align) = when (dismissState.dismissDirection) {
+                SwipeToDismissBoxValue.StartToEnd -> Triple(
+                    Icons.Default.Archive,
+                    MaterialTheme.colorScheme.primary,
+                    Alignment.CenterStart
+                )
+                else -> Triple(
+                    Icons.Default.Delete,
+                    MaterialTheme.colorScheme.error,
+                    Alignment.CenterEnd
+                )
+            }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(bg)
+                    .padding(horizontal = 20.dp),
+                contentAlignment = align
+            ) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+            }
+        },
+    ) {
+        // 点击/长按只挂在卡片本体上(不覆盖侧滑背景区);MessageRow 本体已不可点,不会抢事件
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+        ) { content() }
     }
 }
