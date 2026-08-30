@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -66,6 +67,7 @@ fun MailboxInboxScreen(
     address: String,
     onBack: () -> Unit,
     onOpenMessage: (CachedMessage) -> Unit,
+    onOpenArchive: () -> Unit,
 ) {
     val mailbox = vm.mailboxes.collectAsState().value.firstOrNull { it.address == address }
     val messages by vm.inboxMessages.collectAsState()
@@ -105,6 +107,9 @@ fun MailboxInboxScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = onOpenArchive) {
+                        Icon(Icons.Default.Archive, "归档")
+                    }
                     IconButton(onClick = { vm.refreshActive() }) {
                         Icon(Icons.Default.Refresh, "刷新")
                     }
@@ -237,32 +242,38 @@ fun MailboxInboxScreen(
 
     // 删除二选确认框: 侧滑到位与长按菜单「删除」都汇到这里,确认前不真删
     pendingDelete?.let { msg ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("删除这封邮件?") },
-            text = { Text(Rfc2047.decode(msg.subject) ?: "(无主题)") },
-            confirmButton = {
-                Row {
-                    TextButton(onClick = {
-                        vm.deleteMessageLocal(msg.messageKey)
-                        pendingDelete = null
-                    }) { Text("仅本地删") }
-                    TextButton(onClick = {
-                        vm.deleteMessageEverywhere(msg)
-                        pendingDelete = null
-                    }) { Text("本地+云端都删") }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
-            }
-        )
+        MessageDeleteDialog(vm = vm, msg = msg, onDismiss = { pendingDelete = null })
     }
 }
 
-/** 收件箱列表行: 与详情页同一渲染管线(主题解码 + 脏 MIME 清洗 + OTP 识别); 不可点 — 点击/长按由 SwipeableMessageRow 统一接管 */
+/** 删除二选确认框(收件箱/归档页共用): 仅本地删(软删 tombstone) / 本地+云端都删 / 取消 */
 @Composable
-private fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState) {
+fun MessageDeleteDialog(vm: AppViewModel, msg: CachedMessage, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("删除这封邮件?") },
+        text = { Text(Rfc2047.decode(msg.subject) ?: "(无主题)") },
+        confirmButton = {
+            Row {
+                TextButton(onClick = {
+                    vm.deleteMessageLocal(msg.messageKey)
+                    onDismiss()
+                }) { Text("仅本地删") }
+                TextButton(onClick = {
+                    vm.deleteMessageEverywhere(msg)
+                    onDismiss()
+                }) { Text("本地+云端都删") }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+/** 邮件列表行(收件箱/归档页共用): 与详情页同一渲染管线(主题解码 + 脏 MIME 清洗 + OTP 识别); 不可点 — 点击/长按由 SwipeableMessageRow 统一接管 */
+@Composable
+fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState) {
     val displaySubject = Rfc2047.decode(msg.subject)
     val bodies = MimeSanitizer.sanitize(msg.content)
     val plain = bodies.text.ifBlank {
@@ -310,11 +321,13 @@ private fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState) {
 }
 
 /**
- * 可侧滑的收件箱行: 右滑(StartToEnd)=归档、左滑(EndToStart)=删除。
+ * 可侧滑的邮件行(收件箱/归档页共用): 右滑(StartToEnd)=正向操作、左滑(EndToStart)=删除。
+ * [swapActions] = false(收件箱): 右滑=归档(Archive, primary)、左滑=删除;
+ * [swapActions] = true(归档页): 右滑=取消归档(Unarchive, primary)、左滑=删除(方向互换)。
  *
  * 复位方案(实测选择):
- * - 归档 confirmValueChange 返回 true → 行滑出 dismissed 位,Room Flow 把 state=ARCHIVED 的行
- *   从 inboxFlow 移除,列表自动收走该项,无需手动 reset;
+ * - 归档/取消归档 confirmValueChange 返回 true → 行滑出 dismissed 位,Room Flow 把该 state 的行
+ *   从对应 Flow 移除,列表自动收走该项,无需手动 reset;
  * - 删除 confirmValueChange 返回 false → 手势被否决,行自动弹回 Settled(确认框期间行保持原位,
  *   用户点「取消」也无残留),真删交由确认框回调,行同样随 Flow 消失。
  * 因此两个方向都不需要 snapTo/LaunchedEffect 复位管道。
@@ -327,6 +340,7 @@ fun SwipeableMessageRow(
     onDelete: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    swapActions: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
@@ -349,9 +363,10 @@ fun SwipeableMessageRow(
     SwipeToDismissBox(
         state = dismissState,
         backgroundContent = {
+            // 方向语义由调用方经 swapActions 互换;onArchive 本身已携带对应语义(归档/取消归档)
             val (icon, bg, align) = when (dismissState.dismissDirection) {
                 SwipeToDismissBoxValue.StartToEnd -> Triple(
-                    Icons.Default.Archive,
+                    if (swapActions) Icons.Default.Unarchive else Icons.Default.Archive,
                     MaterialTheme.colorScheme.primary,
                     Alignment.CenterStart
                 )

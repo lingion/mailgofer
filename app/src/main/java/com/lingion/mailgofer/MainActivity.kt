@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.lingion.mailgofer.data.CachedMessage
 import com.lingion.mailgofer.ui.AppViewModel
+import com.lingion.mailgofer.ui.ArchiveScreen
 import com.lingion.mailgofer.ui.MailboxListScreen
 import com.lingion.mailgofer.ui.MailboxInboxScreen
 import com.lingion.mailgofer.ui.MessageScreen
@@ -52,6 +53,10 @@ fun AppNav() {
                 onOpenInbox = { address ->
                     selectedAddress.value = address
                     nav.navigate("inbox")
+                },
+                onOpenArchive = { address ->
+                    selectedAddress.value = address
+                    nav.navigate("inbox/archive")
                 }
             )
         }
@@ -60,6 +65,19 @@ fun AppNav() {
         }
         composable("inbox") {
             MailboxInboxScreen(
+                vm = vm,
+                address = selectedAddress.value ?: "",
+                onBack = { nav.popBackStack() },
+                onOpenMessage = { msg ->
+                    selectedMessage.value = msg
+                    nav.navigate("message")
+                },
+                onOpenArchive = { nav.navigate("inbox/archive") }
+            )
+        }
+        // 归档页路由(brief 里的 inbox/{address}/archive):地址走进程内 holder 传递,与 inbox 同模式
+        composable("inbox/archive") {
+            ArchiveScreen(
                 vm = vm,
                 address = selectedAddress.value ?: "",
                 onBack = { nav.popBackStack() },

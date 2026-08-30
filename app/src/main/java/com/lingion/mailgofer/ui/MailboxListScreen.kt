@@ -1,6 +1,8 @@
 package com.lingion.mailgofer.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,9 +57,11 @@ fun MailboxListScreen(
     vm: AppViewModel,
     onOpenSettings: () -> Unit,
     onOpenInbox: (String) -> Unit,
+    onOpenArchive: (String) -> Unit,
 ) {
     val mailboxes by vm.mailboxes.collectAsState()
     val unreadCounts by vm.unreadCounts.collectAsState()
+    val archivedCounts by vm.archivedCounts.collectAsState()
     val toast by vm.toast.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
@@ -122,8 +126,10 @@ fun MailboxListScreen(
                     MailboxCard(
                         mailbox = mb,
                         unread = unreadCounts[mb.address] ?: 0, // 未读真值在本地 DB,不再用 StoredMailbox.unread
+                        archived = archivedCounts[mb.address] ?: 0, // 归档数真值同在本地 DB
                         expired = MailboxLogic.isExpired(mb),
                         onClick = { onOpenInbox(mb.address) },
+                        onOpenArchive = { onOpenArchive(mb.address) },
                         onRemove = { vm.removeMailbox(mb.address) },
                         onRefresh = { vm.refreshMailbox(mb.address) }
                     )
@@ -136,13 +142,15 @@ fun MailboxListScreen(
     if (showCreate) CreateMailboxSheet(vm, onDismiss = { showCreate = false })
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun MailboxCard(
     mailbox: StoredMailbox,
     unread: Int,
+    archived: Int,
     expired: Boolean,
     onClick: () -> Unit,
+    onOpenArchive: () -> Unit,
     onRemove: () -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -173,21 +181,35 @@ private fun MailboxCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(
-                    buildString {
-                        append(if (expired || !mailbox.active) "已过期" else "★")
-                        // 约束语义描述:两项都可能不限
-                        if (!expired && mailbox.active) {
-                            append(MailboxLogic.formatExpiry(mailbox.expiresAt))
-                            if (mailbox.maxMessages > 0) append(" · 收满${mailbox.maxMessages}封清空") else append(" · 无限收信")
-                        }
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (expired || !mailbox.active) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        buildString {
+                            append(if (expired || !mailbox.active) "已过期" else "★")
+                            // 约束语义描述:两项都可能不限
+                            if (!expired && mailbox.active) {
+                                append(MailboxLogic.formatExpiry(mailbox.expiresAt))
+                                if (mailbox.maxMessages > 0) append(" · 收满${mailbox.maxMessages}封清空") else append(" · 无限收信")
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (expired || !mailbox.active) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (archived > 0) {
+                        // 「归档 N」徽标本身可点进归档页;卡片其余区域 onClick 仍进收件箱
+                        Text(
+                            "归档 $archived",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .clickable(onClick = onOpenArchive)
+                        )
+                    }
+                }
             }
             if (unread > 0) {
                 Box(

@@ -53,8 +53,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var inboxJob: Job? = null
     private var archiveJob: Job? = null
 
-    // 列表页未读徽标: 每个地址一条 DAO.unreadCountFlow,合并成 Map(真值在本地 DB)
-    val unreadCounts: StateFlow<Map<String, Int>> = unreadCountsFlow()
+    // 列表页徽标: 每个地址一条 DAO 计数 Flow,合并成 Map(真值在本地 DB)
+    val unreadCounts: StateFlow<Map<String, Int>> = perAddressCounts { dao.unreadCountFlow(it) }
+    val archivedCounts: StateFlow<Map<String, Int>> = perAddressCounts { dao.archivedCountFlow(it) }
 
     // 创建表单(单个/批量共用 domain/ttl/max)
     val name = MutableStateFlow("")
@@ -91,16 +92,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * 列表页未读徽标数据源: 每个地址一条 DAO.unreadCountFlow,聚合进 Map<地址, 未读数>。
+     * 列表页徽标数据源(未读/归档共用): 每个地址一条计数 Flow,聚合进 Map<地址, 数>。
      * 邮箱列表变化(新增/移除)时经 flatMapLatest 换订阅;任何一条计数变化都重发整张 Map。
      */
-    private fun unreadCountsFlow(): StateFlow<Map<String, Int>> =
+    private fun perAddressCounts(count: (String) -> Flow<Int>): StateFlow<Map<String, Int>> =
         mailboxes
             .flatMapLatest { mbs ->
                 if (mbs.isEmpty()) flowOf(emptyMap())
                 else {
                     // 显式 types: Iterable<Flow<Int>> 重载的 transform 收 Array<Int>
-                    val flows: List<Flow<Int>> = mbs.map { mb -> dao.unreadCountFlow(mb.address) }
+                    val flows: List<Flow<Int>> = mbs.map { mb -> count(mb.address) }
                     val addresses: List<String> = mbs.map { it.address }
                     combine(flows) { counts: Array<Int> ->
                         addresses.zip(counts.toList()) { addr, n -> addr to n }.toMap()
