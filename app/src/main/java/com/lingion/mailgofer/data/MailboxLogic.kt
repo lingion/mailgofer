@@ -152,4 +152,22 @@ object MailboxLogic {
             .let { "${it.monthValue}月${it.dayOfMonth}日" }
         return "${days}天后过期 · $date"
     }
+
+    /** 增量同步锚: external_id 优先,缺省用 地址:云端id 拼(云端 id 是 int 自增,跨邮箱会撞,必须带地址) */
+    fun messageKeyFor(mailboxAddress: String, id: String?, externalId: String?): String =
+        externalId?.takeIf { it.isNotBlank() } ?: "$mailboxAddress:$id"
+
+    /** 一次增量同步计划: 新 key 插入(INBOX+未读),已有 key 只刷正文 */
+    fun planSync(cached: Map<String, CachedMessage>, incoming: List<CachedMessage>): SyncPlan {
+        val toInsert = incoming.filter { it.messageKey !in cached }
+            .map { it.copy(state = MessageState.INBOX, unread = true) }
+        val toRefresh = incoming.filter { it.messageKey in cached }
+        return SyncPlan(toInsert, toRefresh)
+    }
 }
+
+/** 一次增量同步的结果计划: toInsert 落库 / toRefresh 逐条走 DAO.refreshBody 刷正文 */
+data class SyncPlan(
+    val toInsert: List<CachedMessage>,
+    val toRefresh: List<CachedMessage>,
+)

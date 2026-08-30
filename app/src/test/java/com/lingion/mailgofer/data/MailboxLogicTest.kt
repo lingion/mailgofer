@@ -2,12 +2,18 @@ package com.lingion.mailgofer.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MailboxLogicTest {
 
     private fun mb(addr: String, last: Int, unread: Int) =
         StoredMailbox(address = addr, lastSeenCount = last, unread = unread)
+
+    private fun cached(key: String) = CachedMessage(
+        messageKey = key, mailboxAddress = "a@x.com", subject = "s",
+        cachedAt = 0L,
+    )
 
     // ── batchNames ──
     @Test
@@ -318,5 +324,42 @@ class MailboxLogicTest {
         assertEquals(false, MailboxLogic.validateConstraints(ttlText = "", maxText = "2147483648"))
         assertEquals(null to null, MailboxLogic.requestConstraints(ttlText = "2147483648", maxText = ""))
         assertEquals(null to null, MailboxLogic.requestConstraints(ttlText = "", maxText = "2147483648"))
+    }
+
+    // ── messageKeyFor / planSync(增量同步状态机)──
+    @Test
+    fun `同步键_externalId优先_缺省用地址拼id`() {
+        assertEquals("ext-1", MailboxLogic.messageKeyFor("a@x.com", "9", "ext-1"))
+        assertEquals("a@x.com:9", MailboxLogic.messageKeyFor("a@x.com", "9", null))
+        assertEquals("a@x.com:9", MailboxLogic.messageKeyFor("a@x.com", "9", ""))
+    }
+
+    @Test
+    fun `同步计划_新邮件进插入列表_带INBOX与未读`() {
+        val incoming = listOf(cached("k1"), cached("k2"))
+        val plan = MailboxLogic.planSync(emptyMap(), incoming)
+        assertEquals(listOf("k1", "k2"), plan.toInsert.map { it.messageKey })
+        assertTrue(plan.toInsert.all { it.state == MessageState.INBOX && it.unread })
+        assertTrue(plan.toRefresh.isEmpty())
+    }
+
+    @Test
+    fun `同步计划_已有key只刷新正文_不覆盖state与未读`() {
+        val existing = cached("k1").copy(state = MessageState.ARCHIVED, unread = false, subject = "旧")
+        val incoming = listOf(cached("k1").copy(subject = "新"))
+        val plan = MailboxLogic.planSync(mapOf("k1" to existing), incoming)
+        assertTrue(plan.toInsert.isEmpty())
+        assertEquals(listOf("k1"), plan.toRefresh.map { it.messageKey })
+        // 刷新项携带新正文
+        assertEquals("新", plan.toRefresh[0].subject)
+    }
+
+    @Test
+    fun `同步计划_混合新增与刷新`() {
+        val existing = cached("k1").copy(unread = false)
+        val incoming = listOf(cached("k1").copy(subject = "新正文"), cached("k2"))
+        val plan = MailboxLogic.planSync(mapOf("k1" to existing), incoming)
+        assertEquals(listOf("k2"), plan.toInsert.map { it.messageKey })
+        assertEquals(listOf("k1"), plan.toRefresh.map { it.messageKey })
     }
 }
