@@ -326,6 +326,15 @@ class MailboxLogicTest {
         assertEquals(listOf("k1"), plan.toRefresh.map { it.messageKey })
     }
 
+    @Test
+    fun `同步计划_已本地删除的邮件归刷新不复活`() {
+        // 软删 tombstone(DELETED_LOCAL)在缓存里 → 云端再拉到同 key 只刷正文,不得重新插入成未读新邮件
+        val deleted = cached("k1").copy(state = MessageState.DELETED_LOCAL, unread = false)
+        val plan = MailboxLogic.planSync(mapOf("k1" to deleted), listOf(cached("k1")))
+        assertTrue(plan.toInsert.isEmpty())
+        assertEquals(listOf("k1"), plan.toRefresh.map { it.messageKey })
+    }
+
     // ── toCached(Message data class → 缓存行)──
     @Test
     fun `消息转换_键生成与字段搬运`() {

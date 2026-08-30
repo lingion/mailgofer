@@ -331,27 +331,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { dao.setState(key, MessageState.INBOX) }
     }
 
-    /** 仅本地删除(云端可能还在,服务端到期后自然消失) */
+    /** 仅本地删除: 软删 tombstone(DELETED_LOCAL),云端再拉到也不会复活成未读新邮件 */
     fun deleteMessageLocal(key: String) {
-        viewModelScope.launch { dao.deleteLocal(key) }
+        viewModelScope.launch { dao.setState(key, MessageState.DELETED_LOCAL) }
     }
 
-    /** 本地删 + 云端删;external_id 键拿不到云端 id 时只做本地隐藏并明说 */
+    /** 本地删 + 云端删;external_id 键拿不到云端 id 时只做本地软删并明说 */
     fun deleteMessageEverywhere(msg: CachedMessage) {
         viewModelScope.launch {
             val cloudId = MailboxLogic.cloudIdFor(msg.mailboxAddress, msg.messageKey)
             if (cloudId == null) {
-                // external_id 键: 客户端没有数字 id,不猜不试,只隐藏并告知
-                dao.deleteLocal(msg.messageKey)
+                // external_id 键: 客户端没有数字 id,不猜不试,软删隐藏并告知
+                dao.setState(msg.messageKey, MessageState.DELETED_LOCAL)
                 toast.value = "该邮件暂不支持云端删除,仅本地隐藏"
                 return@launch
             }
             val api = api() ?: return@launch
             try {
                 api.deleteEmail(cloudId)
+                // 云端已真删,物理清行安全(同 key 不会再从云端爬回)
                 dao.deleteLocal(msg.messageKey)
                 toast.value = "已删除(本地+云端)"
             } catch (e: Exception) {
+                // 云端失败 → 行保留可重试,但先软删挡住轮询,别让用户删了还能看见
+                dao.setState(msg.messageKey, MessageState.DELETED_LOCAL)
                 toast.value = "云端删除失败: ${e.message},邮件保留,可重试"
             }
         }
