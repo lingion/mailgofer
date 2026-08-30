@@ -321,9 +321,10 @@ fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState) {
 }
 
 /**
- * 可侧滑的邮件行(收件箱/归档页共用): 右滑(StartToEnd)=正向操作、左滑(EndToStart)=删除。
- * [swapActions] = false(收件箱): 右滑=归档(Archive, primary)、左滑=删除;
- * [swapActions] = true(归档页): 右滑=取消归档(Unarchive, primary)、左滑=删除(方向互换)。
+ * 可侧滑的邮件行(收件箱/归档页共用)。
+ * [swapActions] = false(收件箱): 右滑(StartToEnd)=归档(Archive, primary)、左滑(EndToStart)=删除;
+ * [swapActions] = true(归档页, 方向-动作绑定整条互换):
+ * 左滑(EndToStart)=取消归档(Unarchive, primary)、右滑(StartToEnd)=删除。
  *
  * 复位方案(实测选择):
  * - 归档/取消归档 confirmValueChange 返回 true → 行滑出 dismissed 位,Room Flow 把该 state 的行
@@ -343,19 +344,22 @@ fun SwipeableMessageRow(
     swapActions: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // 方向-动作绑定: 默认 primary(归档/取消归档)=右滑;归档页整条互换后 primary=左滑
+    val primarySwipe =
+        if (swapActions) SwipeToDismissBoxValue.EndToStart else SwipeToDismissBoxValue.StartToEnd
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { v ->
             when (v) {
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    onArchive()
+                primarySwipe -> {
+                    onArchive() // 归档页此回调即取消归档
                     true
                 }
-                // 不真删,只弹确认框;返回 false 让行弹回原位
-                SwipeToDismissBoxValue.EndToStart -> {
+                SwipeToDismissBoxValue.Settled -> false
+                // 删除方向: 不真删,只弹确认框;返回 false 让行弹回原位
+                else -> {
                     onDelete()
                     false
                 }
-                SwipeToDismissBoxValue.Settled -> false
             }
         },
         positionalThreshold = { totalDistance -> totalDistance * 0.45f },
@@ -363,19 +367,19 @@ fun SwipeableMessageRow(
     SwipeToDismissBox(
         state = dismissState,
         backgroundContent = {
-            // 方向语义由调用方经 swapActions 互换;onArchive 本身已携带对应语义(归档/取消归档)
-            val (icon, bg, align) = when (dismissState.dismissDirection) {
-                SwipeToDismissBoxValue.StartToEnd -> Triple(
-                    if (swapActions) Icons.Default.Unarchive else Icons.Default.Archive,
-                    MaterialTheme.colorScheme.primary,
-                    Alignment.CenterStart
-                )
-                else -> Triple(
-                    Icons.Default.Delete,
-                    MaterialTheme.colorScheme.error,
-                    Alignment.CenterEnd
-                )
+            val isPrimary = dismissState.dismissDirection == primarySwipe
+            val icon = when {
+                isPrimary && swapActions -> Icons.Default.Unarchive
+                isPrimary -> Icons.Default.Archive
+                else -> Icons.Default.Delete
             }
+            val bg =
+                if (isPrimary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            // 露出侧跟着几何走: 右滑(StartToEnd)露左侧、左滑(EndToStart)露右侧
+            val align =
+                if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd)
+                    Alignment.CenterStart
+                else Alignment.CenterEnd
             Box(
                 Modifier
                     .fillMaxSize()

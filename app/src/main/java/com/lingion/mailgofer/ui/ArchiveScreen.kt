@@ -40,7 +40,7 @@ import com.lingion.mailgofer.data.CachedMessage
 
 /**
  * 独立归档页: 读 vm.archiveMessages(openArchive(address) 收集的 Room state=ARCHIVED Flow)。
- * 侧滑方向与收件箱互换: 右滑=取消归档(Unarchive, primary)、左滑=删除(同一套二选确认框)。
+ * 侧滑方向与收件箱互换: 左滑=取消归档(Unarchive, primary)、右滑=删除(同一套二选确认框)。
  * 长按菜单同收件箱(取消归档/删除)。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,7 +108,7 @@ fun ArchiveScreen(
                         Box {
                             SwipeableMessageRow(
                                 msg = msg,
-                                swapActions = true, // 归档页: 右滑=取消归档(图标 Unarchive)
+                                swapActions = true, // 归档页: 左滑=取消归档(Unarchive, primary)、右滑=删除
                                 onArchive = { vm.unarchiveMessage(msg.messageKey) },
                                 onDelete = { pendingDelete = msg },
                                 onClick = { onOpenMessage(msg) },
