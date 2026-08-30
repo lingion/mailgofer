@@ -1,7 +1,6 @@
 package com.lingion.mailgofer.model
 
 import kotlinx.serialization.SerialName
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.Serializable
 
 /**
@@ -48,11 +47,7 @@ data class Message(
     @SerialName("created_at") val createdAt: String? = null,
     val timestamp: Long? = null,
     @SerialName("has_html") val hasHtml: Boolean? = null,
-) {
-    /** id 统一字符串化(int/str 都能接);LazyColumn key、GET /api/email/{id} 都用它 */
-    val idString: String?
-        get() = id?.contentOrNull ?: id?.toString()
-}
+)
 
 @Serializable
 data class MailboxMessages(

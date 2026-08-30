@@ -44,11 +44,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lingion.mailgofer.data.CachedMessage
 import com.lingion.mailgofer.data.MailboxLogic
 import com.lingion.mailgofer.format.MimeSanitizer
 import com.lingion.mailgofer.format.OtpExtractor
 import com.lingion.mailgofer.format.Rfc2047
-import com.lingion.mailgofer.model.Message
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,10 +56,10 @@ fun MailboxInboxScreen(
     vm: AppViewModel,
     address: String,
     onBack: () -> Unit,
-    onOpenMessage: (Message) -> Unit,
+    onOpenMessage: (CachedMessage) -> Unit,
 ) {
     val mailbox = vm.mailboxes.collectAsState().value.firstOrNull { it.address == address }
-    val messages by vm.messages.collectAsState()
+    val messages by vm.inboxMessages.collectAsState()
     val busy by vm.busy.collectAsState()
     val toast by vm.toast.collectAsState()
     val autoRefresh by vm.autoRefresh.collectAsState()
@@ -165,55 +165,8 @@ fun MailboxInboxScreen(
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(messages, key = { it.idString ?: "idx-${it.hashCode()}" }) { msg ->
-                        // 列表行渲染管线与详情页一致: 主题解码 + 脏 MIME 清洗 + OTP 识别
-                        val displaySubject = Rfc2047.decode(msg.subject)
-                        val bodies = MimeSanitizer.sanitize(msg.content)
-                        val plain = bodies.text.ifBlank {
-                            msg.content?.takeIf { it.isNotBlank() && !it.contains("--") }
-                                ?: bodies.html.replace(Regex("<[^>]+>"), " ")
-                        }
-                        val otp = OtpExtractor.extract(plain) ?: OtpExtractor.extract(bodies.html)
-                        Card(
-                            onClick = { onOpenMessage(msg) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        msg.fromAddress ?: "(未知发件人)",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (otp != null) {
-                                        Spacer(Modifier.width(8.dp))
-                                        // 预览页直接复制验证码,无需进详情页
-                                        OtpChip(otp, compact = true, hostState = snackbar)
-                                    }
-                                }
-                                Text(
-                                    displaySubject ?: "(无主题)",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    plain.lineSequence().firstOrNull().orEmpty(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    msg.createdAt ?: "",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
-                        }
+                    items(messages, key = { it.messageKey }) { msg ->
+                        MessageRow(msg, snackbar) { onOpenMessage(msg) }
                     }
                 }
             }
@@ -235,5 +188,57 @@ fun MailboxInboxScreen(
                 TextButton(onClick = { showRefreshConfirm = false }) { Text("取消") }
             }
         )
+    }
+}
+
+/** 收件箱列表行: 与详情页同一渲染管线(主题解码 + 脏 MIME 清洗 + OTP 识别) */
+@Composable
+private fun MessageRow(msg: CachedMessage, snackbar: SnackbarHostState, onClick: () -> Unit) {
+    val displaySubject = Rfc2047.decode(msg.subject)
+    val bodies = MimeSanitizer.sanitize(msg.content)
+    val plain = bodies.text.ifBlank {
+        msg.content?.takeIf { it.isNotBlank() && !it.contains("--") }
+            ?: bodies.html.replace(Regex("<[^>]+>"), " ")
+    }
+    val otp = OtpExtractor.extract(plain) ?: OtpExtractor.extract(bodies.html)
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    msg.fromAddress ?: "(未知发件人)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (otp != null) {
+                    Spacer(Modifier.width(8.dp))
+                    // 预览页直接复制验证码,无需进详情页
+                    OtpChip(otp, compact = true, hostState = snackbar)
+                }
+            }
+            Text(
+                displaySubject ?: "(无主题)",
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                plain.lineSequence().firstOrNull().orEmpty(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                msg.createdAt ?: "",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
     }
 }

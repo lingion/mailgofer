@@ -27,35 +27,6 @@ object MailboxLogic {
         }
     }
 
-    /**
-     * 一轮轮询结果落到列表上。
-     * newCount < lastSeen → 服务端收满清空过:基准重置、未读清零;
-     * 否则 delta 计入未读;正在查看的邮箱始终 unread=0。
-     */
-    fun applyPollResult(
-        list: List<StoredMailbox>,
-        address: String,
-        newCount: Int,
-        openAddress: String?,
-    ): List<StoredMailbox> = list.map { mb ->
-        when {
-            mb.address != address -> mb
-            newCount < mb.lastSeenCount -> mb.copy(lastSeenCount = newCount, unread = 0)
-            else -> {
-                val unread =
-                    if (address == openAddress) 0
-                    else mb.unread + (newCount - mb.lastSeenCount)
-                mb.copy(lastSeenCount = newCount, unread = unread)
-            }
-        }
-    }
-
-    /** 打开收件箱后标记已读,并把基准校准到刚拉到的数量 */
-    fun markRead(list: List<StoredMailbox>, address: String, fetchedCount: Int): List<StoredMailbox> =
-        list.map {
-            if (it.address == address) it.copy(unread = 0, lastSeenCount = fetchedCount) else it
-        }
-
     /** 旧单会话 → 列表首项;地址空或已存在则原样返回 */
     fun migrateLegacy(existing: List<StoredMailbox>, legacy: MailboxSession): List<StoredMailbox> =
         if (legacy.email.isBlank() || existing.any { it.address == legacy.email }) existing

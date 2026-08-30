@@ -15,7 +15,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.lingion.mailgofer.model.Message
+import com.lingion.mailgofer.data.CachedMessage
 import com.lingion.mailgofer.ui.AppViewModel
 import com.lingion.mailgofer.ui.MailboxListScreen
 import com.lingion.mailgofer.ui.MailboxInboxScreen
@@ -41,7 +41,7 @@ fun AppNav() {
     val vm: AppViewModel = viewModel()
     val nav = rememberNavController()
     // 进程内 holder:详情页/收件箱参数用状态传递(邮件体太大不走 route)
-    var selectedMessage = remember { mutableStateOf<Message?>(null) }
+    var selectedMessage = remember { mutableStateOf<CachedMessage?>(null) }
     var selectedAddress = remember { mutableStateOf<String?>(null) }
 
     NavHost(navController = nav, startDestination = "main") {
@@ -70,7 +70,11 @@ fun AppNav() {
             )
         }
         composable("message") {
-            MessageScreen(message = selectedMessage.value ?: Message(), onBack = { nav.popBackStack() })
+            MessageScreen(
+                message = selectedMessage.value ?: CachedMessage(messageKey = "", mailboxAddress = ""),
+                onBack = { nav.popBackStack() },
+                onMarkRead = { vm.markMessageRead(it) },
+            )
         }
     }
 }

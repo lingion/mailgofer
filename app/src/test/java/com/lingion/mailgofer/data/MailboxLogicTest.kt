@@ -9,9 +9,6 @@ import org.junit.Test
 
 class MailboxLogicTest {
 
-    private fun mb(addr: String, last: Int, unread: Int) =
-        StoredMailbox(address = addr, lastSeenCount = last, unread = unread)
-
     private fun cached(key: String) = CachedMessage(
         messageKey = key, mailboxAddress = "a@x.com", subject = "s",
         cachedAt = 0L,
@@ -55,42 +52,6 @@ class MailboxLogicTest {
     @Test
     fun `批量命名_大写前缀归一化`() {
         assertEquals(listOf("lingtest-1", "lingtest-2"), MailboxLogic.batchNames("LingTest", 2))
-    }
-
-    // ── applyPollResult ──
-    @Test
-    fun `新邮件到达_未读累加`() {
-        val list = listOf(mb("a@x.com", 3, 0), mb("b@x.com", 1, 2))
-        val out = MailboxLogic.applyPollResult(list, "a@x.com", 5, openAddress = null)
-        assertEquals(2, out[0].unread)
-        assertEquals(5, out[0].lastSeenCount)
-        assertEquals(2, out[1].unread) // 别的邮箱不动
-    }
-
-    @Test
-    fun `正在查看的邮箱_不涨未读`() {
-        val list = listOf(mb("a@x.com", 3, 0))
-        val out = MailboxLogic.applyPollResult(list, "a@x.com", 7, openAddress = "a@x.com")
-        assertEquals(0, out[0].unread)
-        assertEquals(7, out[0].lastSeenCount)
-    }
-
-    @Test
-    fun `服务端清空_count回退_基准重置未读清零`() {
-        val list = listOf(mb("a@x.com", 10, 4))
-        val out = MailboxLogic.applyPollResult(list, "a@x.com", 0, openAddress = null)
-        assertEquals(0, out[0].unread)
-        assertEquals(0, out[0].lastSeenCount)
-    }
-
-    // ── markRead ──
-    @Test
-    fun `标记已读_基准校准`() {
-        val list = listOf(mb("a@x.com", 3, 9), mb("b@x.com", 1, 1))
-        val out = MailboxLogic.markRead(list, "a@x.com", fetchedCount = 8)
-        assertEquals(0, out[0].unread)
-        assertEquals(8, out[0].lastSeenCount)
-        assertEquals(1, out[1].unread)
     }
 
     // ── migrateLegacy ──

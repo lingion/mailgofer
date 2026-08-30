@@ -8,13 +8,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.lingion.mailgofer.data.CachedMessage
 import com.lingion.mailgofer.format.MimeSanitizer
 import com.lingion.mailgofer.format.OtpExtractor
 import com.lingion.mailgofer.format.Rfc2047
-import com.lingion.mailgofer.model.Message
 
 /**
  * 邮件详情 — 渲染管线:
@@ -22,10 +23,18 @@ import com.lingion.mailgofer.model.Message
  *   2. 正文: 服务端脏数据(原始 MIME 塞 content)→ sanitize 切分;干净 text 直接用
  *   3. 有 html 段 → WebView 渲染(图片/链接可看);否则纯文本
  *   4. 识别出验证码 → 顶部 OtpBanner + 复制
+ * 数据源是本地缓存行: 进屏即标记已读(未读徽标由此衰减)。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MessageScreen(message: Message, onBack: () -> Unit) {
+fun MessageScreen(
+    message: CachedMessage,
+    onBack: () -> Unit,
+    onMarkRead: (String) -> Unit = {},
+) {
+    // 已读标记: 进详情即衰减未读计数(Room 真源,列表徽标自动跟随)
+    LaunchedEffect(message.messageKey) { onMarkRead(message.messageKey) }
+
     val subject = Rfc2047.decode(message.subject)
 
     // 正文管线: 优先 content;若 content 是原始 MIME 脏数据则切分出 text/html
@@ -86,7 +95,7 @@ fun MessageScreen(message: Message, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                "收件人: ${message.emailAddress ?: "?"}",
+                "收件人: ${message.mailboxAddress}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

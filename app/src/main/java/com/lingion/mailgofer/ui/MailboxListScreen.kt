@@ -57,6 +57,7 @@ fun MailboxListScreen(
     onOpenInbox: (String) -> Unit,
 ) {
     val mailboxes by vm.mailboxes.collectAsState()
+    val unreadCounts by vm.unreadCounts.collectAsState()
     val toast by vm.toast.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
@@ -120,6 +121,7 @@ fun MailboxListScreen(
                 items(mailboxes, key = { it.address }) { mb ->
                     MailboxCard(
                         mailbox = mb,
+                        unread = unreadCounts[mb.address] ?: 0, // 未读真值在本地 DB,不再用 StoredMailbox.unread
                         expired = MailboxLogic.isExpired(mb),
                         onClick = { onOpenInbox(mb.address) },
                         onRemove = { vm.removeMailbox(mb.address) },
@@ -138,6 +140,7 @@ fun MailboxListScreen(
 @Composable
 private fun MailboxCard(
     mailbox: StoredMailbox,
+    unread: Int,
     expired: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
@@ -186,7 +189,7 @@ private fun MailboxCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (mailbox.unread > 0) {
+            if (unread > 0) {
                 Box(
                     Modifier
                         .size(28.dp)
@@ -194,7 +197,7 @@ private fun MailboxCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        if (mailbox.unread > 99) "99+" else "${mailbox.unread}",
+                        if (unread > 99) "99+" else "$unread",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimary
                     )

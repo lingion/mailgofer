@@ -4,8 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lingion.mailgofer.api.MailGoferApi
+import com.lingion.mailgofer.data.CachedMessage
+import com.lingion.mailgofer.data.MailGoferDb
 import com.lingion.mailgofer.data.MailboxLogic
 import com.lingion.mailgofer.data.MailboxRepository
+import com.lingion.mailgofer.data.MessageState
 import com.lingion.mailgofer.data.ServerConfig
 import com.lingion.mailgofer.data.SessionStore
 import com.lingion.mailgofer.data.SettingsStore
@@ -15,19 +18,25 @@ import com.lingion.mailgofer.model.Mailbox
 import com.lingion.mailgofer.model.Message
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class) // flatMapLatest
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val settingsStore = SettingsStore(app)
     private val sessionStore = SessionStore(app)
     private val repo = MailboxRepository(app)
+    private val dao = MailGoferDb.get(app).cachedMessageDao()
 
     val config: StateFlow<ServerConfig> = settingsStore.config
         .stateIn(viewModelScope, SharingStarted.Eagerly, ServerConfig())
@@ -37,7 +46,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── UI state ──────────────────────────────────────────────────────────
     val activeAddress = MutableStateFlow<String?>(null)
-    val messages = MutableStateFlow<List<Message>>(emptyList())
+
+    // 收件箱/归档数据源: openInbox/openArchive 切换地址后收集的 Room Flow(唯一真源是 DB)
+    val inboxMessages = MutableStateFlow<List<CachedMessage>>(emptyList())
+    val archiveMessages = MutableStateFlow<List<CachedMessage>>(emptyList())
+    private var inboxJob: Job? = null
+    private var archiveJob: Job? = null
+
+    // 列表页未读徽标: 每个地址一条 DAO.unreadCountFlow,合并成 Map(真值在本地 DB)
+    val unreadCounts: StateFlow<Map<String, Int>> = unreadCountsFlow()
 
     // 创建表单(单个/批量共用 domain/ttl/max)
     val name = MutableStateFlow("")
@@ -72,6 +89,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         startGlobalPolling()
     }
+
+    /**
+     * 列表页未读徽标数据源: 每个地址一条 DAO.unreadCountFlow,聚合进 Map<地址, 未读数>。
+     * 邮箱列表变化(新增/移除)时经 flatMapLatest 换订阅;任何一条计数变化都重发整张 Map。
+     */
+    private fun unreadCountsFlow(): StateFlow<Map<String, Int>> =
+        mailboxes
+            .flatMapLatest { mbs ->
+                if (mbs.isEmpty()) flowOf(emptyMap())
+                else {
+                    // 显式 types: Iterable<Flow<Int>> 重载的 transform 收 Array<Int>
+                    val flows: List<Flow<Int>> = mbs.map { mb -> dao.unreadCountFlow(mb.address) }
+                    val addresses: List<String> = mbs.map { it.address }
+                    combine(flows) { counts: Array<Int> ->
+                        addresses.zip(counts.toList()) { addr, n -> addr to n }.toMap()
+                    }
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     private fun api(): MailGoferApi? {
         val c = config.value
@@ -199,28 +235,47 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── 收件箱 ────────────────────────────────────────────────────────────
+    // ── 收件箱(本地 DB 真源 + 云端增量同步)──────────────────────────────
 
     fun openInbox(address: String) {
         activeAddress.value = address
-        fetchActive(markRead = true)
+        inboxJob?.cancel()
+        inboxJob = viewModelScope.launch {
+            dao.inboxFlow(address).collect { inboxMessages.value = it }
+        }
+        fetchActive() // 拉增量落库;未读标记改由「点开单封」驱动,不再打开即全读
     }
 
     fun closeInbox() {
         activeAddress.value = null
-        messages.value = emptyList()
+        inboxJob?.cancel()
+        inboxJob = null
+        inboxMessages.value = emptyList()
     }
 
-    fun refreshActive() = fetchActive(markRead = false)
+    fun openArchive(address: String) {
+        archiveJob?.cancel()
+        archiveJob = viewModelScope.launch {
+            dao.archiveFlow(address).collect { archiveMessages.value = it }
+        }
+    }
 
-    private fun fetchActive(markRead: Boolean) {
+    fun closeArchive() {
+        archiveJob?.cancel()
+        archiveJob = null
+        archiveMessages.value = emptyList()
+    }
+
+    fun refreshActive() = fetchActive()
+
+    private fun fetchActive() {
         val addr = activeAddress.value ?: return
         val api = api() ?: return
         busy.value = true
         viewModelScope.launch {
             try {
                 val list = api.mailboxMessages(addr)
-                messages.value = list.messages
+                syncIntoCache(addr, list.messages)
                 // brief 现在带 expires_at/active/max_messages,顺手同步状态(过期即标)
                 list.mailbox?.let { brief ->
                     repo.updateAll {
@@ -232,7 +287,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                 }
-                if (markRead) repo.updateAll { MailboxLogic.markRead(it, addr, list.messages.size) }
             } catch (e: MailGoferApi.ApiException) {
                 if (e.code == 410) markExpired(addr)
                 toast.value = when (e.code) {
@@ -247,8 +301,65 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 云端列表 → 缓存行,增量落库: 新 key 插入(未读),已有 key 只刷正文(state/unread 不动) */
+    private suspend fun syncIntoCache(address: String, list: List<Message>) {
+        val incoming = list.map { MailboxLogic.toCached(address, it) }
+        if (incoming.isEmpty()) return
+        val keys = incoming.map { it.messageKey }.toSet()
+        if (keys.isEmpty()) return // messageKey 恒非空,纯防御(空 set 会让 IN () 报语法错)
+        val cachedRows = dao.byKeys(keys)
+        val plan = MailboxLogic.planSync(cachedRows.associateBy { it.messageKey }, incoming)
+        dao.upsertAll(plan.toInsert)
+        plan.toRefresh.forEach { r ->
+            dao.refreshBody(r.messageKey, r.fromAddress, r.subject, r.content, r.htmlContent, r.timestamp)
+        }
+    }
+
     private suspend fun markExpired(address: String) {
         repo.updateAll { list -> list.map { if (it.address == address) it.copy(active = false) else it } }
+    }
+
+    // ── 单封邮件操作(本地 DB 即时生效,云端删失败则保留并可重试)──────────
+
+    /** 归档: 收件箱消失,归档页可见 */
+    fun archiveMessage(key: String) {
+        viewModelScope.launch { dao.setState(key, MessageState.ARCHIVED) }
+    }
+
+    /** 取消归档: 回收件箱 */
+    fun unarchiveMessage(key: String) {
+        viewModelScope.launch { dao.setState(key, MessageState.INBOX) }
+    }
+
+    /** 仅本地删除(云端可能还在,服务端到期后自然消失) */
+    fun deleteMessageLocal(key: String) {
+        viewModelScope.launch { dao.deleteLocal(key) }
+    }
+
+    /** 本地删 + 云端删;external_id 键拿不到云端 id 时只做本地隐藏并明说 */
+    fun deleteMessageEverywhere(msg: CachedMessage) {
+        viewModelScope.launch {
+            val cloudId = MailboxLogic.cloudIdFor(msg.mailboxAddress, msg.messageKey)
+            if (cloudId == null) {
+                // external_id 键: 客户端没有数字 id,不猜不试,只隐藏并告知
+                dao.deleteLocal(msg.messageKey)
+                toast.value = "该邮件暂不支持云端删除,仅本地隐藏"
+                return@launch
+            }
+            val api = api() ?: return@launch
+            try {
+                api.deleteEmail(cloudId)
+                dao.deleteLocal(msg.messageKey)
+                toast.value = "已删除(本地+云端)"
+            } catch (e: Exception) {
+                toast.value = "云端删除失败: ${e.message},邮件保留,可重试"
+            }
+        }
+    }
+
+    /** 点开详情时标记已读(未读徽标的唯一衰减来源) */
+    fun markMessageRead(key: String) {
+        viewModelScope.launch { dao.markRead(key) }
     }
 
     /**
@@ -269,12 +380,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val mb = api.refreshMailbox(address, req)
                 repo.updateAll { list ->
-                    MailboxLogic.replaceOrAppend(
-                        list,
-                        mb.toStored().copy(lastSeenCount = 0, unread = 0),
-                    )
+                    MailboxLogic.replaceOrAppend(list, mb.toStored())
                 }
-                if (activeAddress.value == address) fetchActive(markRead = true)
+                // 服务端旧邮件已清空 → 本地缓存同步清掉,别让已删邮件还躺在收件箱
+                dao.deleteAllForMailbox(address)
+                if (activeAddress.value == address) fetchActive()
                 val max = mb.maxMessages ?: 0
                 val constraint = buildString {
                     append(MailboxLogic.formatExpiry(mb.expiresAt))
@@ -295,6 +405,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun removeMailbox(address: String) {
         viewModelScope.launch {
             repo.remove(address)
+            dao.deleteAllForMailbox(address) // 邮箱没了,它的本地缓存一并清
             if (activeAddress.value == address) closeInbox()
             toast.value = "已移除 $address(服务端到期自动清理)"
         }
@@ -327,14 +438,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 }
                             }
                         } catch (_: Exception) { /* 静默,下轮重试 */ }
-                        // ② 只对仍活跃的邮箱拉信
+                        // ② 只对仍活跃的邮箱拉信,增量落库(DB Flow 自动推到 UI)
                         for (mb in mailboxes.value.filter { it.active }) {
                             try {
                                 val r = api.mailboxMessages(mb.address)
-                                repo.updateAll {
-                                    MailboxLogic.applyPollResult(it, mb.address, r.messages.size, activeAddress.value)
-                                }
-                                if (mb.address == activeAddress.value) messages.value = r.messages
+                                syncIntoCache(mb.address, r.messages)
                             } catch (e: MailGoferApi.ApiException) {
                                 if (e.code == 410) markExpired(mb.address) // 服务端说过期 → 本地标记
                                 /* 其余静默,下轮重试 */

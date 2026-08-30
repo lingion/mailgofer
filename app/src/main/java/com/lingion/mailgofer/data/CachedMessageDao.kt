@@ -43,6 +43,10 @@ interface CachedMessageDao {
     @Query("SELECT * FROM cached_messages WHERE messageKey = :messageKey LIMIT 1")
     suspend fun byKey(messageKey: String): CachedMessage?
 
+    /** 批量按键取已有行(syncIntoCache 去重用);空集合直接给空表,防 IN () 语法错 */
+    @Query("SELECT * FROM cached_messages WHERE messageKey IN (:keys)")
+    suspend fun byKeys(keys: Set<String>): List<CachedMessage>
+
     @Query("DELETE FROM cached_messages WHERE mailboxAddress = :address")
     suspend fun deleteAllForMailbox(address: String)
 }
