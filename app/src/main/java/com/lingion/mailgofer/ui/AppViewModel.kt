@@ -359,7 +359,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 // 云端失败 → 行保留可重试,但先软删挡住轮询,别让用户删了还能看见
                 dao.setState(msg.messageKey, MessageState.DELETED_LOCAL)
-                toast.value = "云端删除失败: ${e.message},邮件保留,可重试"
+                toast.value = "云端删除失败: ${e.message},邮件已从列表隐藏(云端仍在)"
             }
         }
     }
@@ -370,8 +370,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * 刷新邮箱:清空旧邮件 + 重新激活 + 按邮箱【自己的原标准】续期。
-     * UI 层调用前必须已向用户确认"旧邮件会全部丢失"。
+     * 刷新邮箱:服务端清空旧邮件 + 重新激活 + 按邮箱【自己的原标准】续期。
+     * UI 层调用前必须已向用户确认"云端旧邮件会清空";手机本地缓存保留,不受刷新影响。
      * 原标准 = 从 created_at→expires_at 反推原 ttl;永不过期邮箱不传 ttl(服务端沿用 null)。
      * 不读创建表单的值——表单只属于创建,"刷新换个标准"不在刷新语义里。
      */
@@ -389,8 +389,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 repo.updateAll { list ->
                     MailboxLogic.replaceOrAppend(list, mb.toStored())
                 }
-                // 服务端旧邮件已清空 → 本地缓存同步清掉,别让已删邮件还躺在收件箱
-                dao.deleteAllForMailbox(address)
+                // 刷新=云端清空+续期;本地缓存保留(用户明确要求:本地历史不清)。
+                // syncIntoCache 对空 incoming 有早退保护,不会把缓存重插回列表。
                 if (activeAddress.value == address) fetchActive()
                 val max = mb.maxMessages ?: 0
                 val constraint = buildString {

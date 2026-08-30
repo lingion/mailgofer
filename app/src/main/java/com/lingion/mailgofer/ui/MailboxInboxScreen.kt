@@ -189,10 +189,8 @@ fun MailboxInboxScreen(
                                 msg = msg,
                                 onArchive = { vm.archiveMessage(msg.messageKey) },
                                 onDelete = { pendingDelete = msg },
-                                onClick = {
-                                    vm.markMessageRead(msg.messageKey)
-                                    onOpenMessage(msg)
-                                },
+                                // 标读统一走详情页 LaunchedEffect(MessageScreen.kt),此处不重复标
+                                onClick = { onOpenMessage(msg) },
                                 onLongClick = { menuFor = msg },
                             ) {
                                 MessageRow(msg, snackbar)
@@ -227,12 +225,12 @@ fun MailboxInboxScreen(
         AlertDialog(
             onDismissRequest = { showRefreshConfirm = false },
             title = { Text("刷新此邮箱?") },
-            text = { Text("「$address」的全部旧邮件会被清空并重新开始计数,确定继续?") },
+            text = { Text("「$address」的云端旧邮件会被清空并重新开始计数;手机本地缓存的邮件会保留。确定继续?") },
             confirmButton = {
                 TextButton(onClick = {
                     showRefreshConfirm = false
                     vm.refreshMailbox(address)
-                }) { Text("刷新(清空旧邮件)") }
+                }) { Text("刷新(云端清空)") }
             },
             dismissButton = {
                 TextButton(onClick = { showRefreshConfirm = false }) { Text("取消") }
@@ -387,7 +385,7 @@ fun SwipeableMessageRow(
                     .padding(horizontal = 20.dp),
                 contentAlignment = align
             ) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onError)
             }
         },
     ) {

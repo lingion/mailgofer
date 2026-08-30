@@ -30,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -200,12 +201,14 @@ private fun MailboxCard(
                     )
                     if (archived > 0) {
                         // 「归档 N」徽标本身可点进归档页;卡片其余区域 onClick 仍进收件箱
+                        // minimumInteractiveComponentSize: 热区撑到 48dp(M3 触达标准),文本视觉不变
                         Text(
                             "归档 $archived",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .padding(start = 8.dp)
+                                .minimumInteractiveComponentSize()
                                 .clickable(onClick = onOpenArchive)
                         )
                     }
@@ -237,12 +240,12 @@ private fun MailboxCard(
         AlertDialog(
             onDismissRequest = { confirmRefresh = false },
             title = { Text("刷新此邮箱?") },
-            text = { Text("「${mailbox.address}」的全部旧邮件会被清空并重新开始计数,确定继续?") },
+            text = { Text("「${mailbox.address}」的云端旧邮件会被清空并重新开始计数;手机本地缓存的邮件会保留。确定继续?") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmRefresh = false
                     onRefresh()
-                }) { Text("刷新(清空旧邮件)") }
+                }) { Text("刷新(云端清空)") }
             },
             dismissButton = {
                 TextButton(onClick = { confirmRefresh = false }) { Text("取消") }
