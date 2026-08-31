@@ -3,6 +3,7 @@ package com.lingion.mailgofer.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -381,6 +382,9 @@ fun SwipeableMessageRow(
             Box(
                 Modifier
                     .fillMaxSize()
+                    // 剪成与前景 ElevatedCard 同圆角(medium=12dp): 否则红(error)矩形从卡片
+                    // 圆角缺口露角——静止态背景层也画 error 底,被卡片盖住仅角缝可见
+                    .clip(MaterialTheme.shapes.medium)
                     .background(bg)
                     .padding(horizontal = 20.dp),
                 contentAlignment = align
